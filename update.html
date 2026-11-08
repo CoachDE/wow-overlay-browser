@@ -65,10 +65,10 @@
 </head>
 <body>
   <div class="wrap">
-    <header><h1>Neue Version verfügbar</h1></header>
+    <header><h1 data-i18n="up.title">Neue Version verfügbar</h1></header>
     <main>
       <div class="versions">
-        Version <b id="current">–</b><span class="arrow">➜</span>Version <b id="latest">–</b>
+        <span data-i18n="up.version">Version</span> <b id="current">–</b><span class="arrow">➜</span><span data-i18n="up.version">Version</span> <b id="latest">–</b>
       </div>
       <div class="progress" id="progress"><div class="fill" id="fill"></div></div>
       <div class="hint" id="hint">Das Overlay wird danach automatisch neu gestartet.</div>
@@ -77,6 +77,7 @@
       <button id="btnUpdate">⬇ Jetzt herunterladen und neu starten</button>
     </footer>
   </div>
+  <script src="i18n.js"></script>
   <script src="update-popup.js"></script>
 </body>
 </html>

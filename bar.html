@@ -131,6 +131,28 @@
     }
     @media (max-width: 400px) { .bm .title { display: none; } .bm { padding: 0 4px; } }
 
+    /* Twitch-Knopf in Twitch-Lila, Adressfeld im Twitch-Eingabemodus */
+    #btnTwitch svg { stroke: #a970ff; }
+    #btnTwitch.on svg { stroke: #fff; }
+    #btnTwitch.on { background: linear-gradient(180deg, #a970ff, #6b2fd6); border-color: #d2b8ff; }
+    input#url.twitch-mode { border-color: #a970ff; box-shadow: inset 0 2px 4px rgba(0,0,0,.8), 0 0 8px rgba(169, 112, 255, .55); }
+
+    /* ---------- Geteilte Ansicht ---------- */
+    #splitDivider {
+      position: fixed; z-index: 4; cursor: col-resize;
+      background: linear-gradient(90deg, var(--ink), color-mix(in srgb, var(--gold-dark) 70%, var(--ink)), var(--ink));
+      -webkit-app-region: no-drag;
+    }
+    #splitDivider[hidden] { display: none; }
+    #splitDivider span {
+      position: absolute; left: 50%; top: 50%; width: 2px; height: 36px; transform: translate(-50%, -50%);
+      border-radius: 1px; background: var(--gold); box-shadow: 0 0 6px color-mix(in srgb, var(--gold) 60%, transparent);
+    }
+    #splitDivider:hover span, #splitDivider.dragging span { background: var(--gold-light); height: 60px; }
+    /* Tab, der in der geteilten Ansicht gerade auf der anderen Seite zu sehen ist */
+    .tab.pane:not(.active) { color: var(--text); border-color: color-mix(in srgb, var(--gold) 70%, transparent); }
+    .tab .side { font-size: 9px; color: var(--gold); margin-left: -2px; }
+
     /* Rückmeldung beim Hinzufügen/Entfernen */
     #btnStar.pop svg { animation: starPop .55s ease-out; }
     @keyframes starPop {
@@ -281,6 +303,7 @@
     }
     /* Schmale Fenster (z. B. Shorts hochkant): Unwichtiges ausblenden */
     @media (max-width: 820px) { #volumeValue { display: none; } #volume, input#opacity { width: 52px; } }
+    @media (max-width: 760px) { #volume, #volumeValue, #btnHome { display: none; } }
     @media (max-width: 700px) { .opacity, #btnReload { display: none; } }
     @media (max-width: 520px) { .opacity, #btnHome, #btnReload, .sep, #volume, #volumeValue { display: none; } }
     /* Lautstärke */
@@ -295,20 +318,20 @@
 </head>
 <body>
   <div id="bar">
-    <div class="emblem" title="YouTube Overlay">
+    <div class="emblem" data-i18n-title="bar.emblem">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 1.5 22.5 12 12 22.5 1.5 12Z" style="fill:var(--btn-2);stroke:var(--gold)" stroke-width="1.5"/>
         <path d="M12 4.5 19.5 12 12 19.5 4.5 12Z" fill="none" style="stroke:var(--gold-dark)" stroke-width="0.8"/>
         <path d="M10 8.3v7.4l6-3.7Z" style="fill:var(--emblem-play)"/>
       </svg>
     </div>
-    <button id="btnBack" title="Zurück" disabled>
+    <button id="btnBack" data-i18n-title="bar.back" disabled>
       <svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>
     </button>
     <button id="btnHome" title="YouTube-Startseite">
       <svg viewBox="0 0 16 16"><path d="M2.5 7.5 8 2.5l5.5 5M4 6.5V13h3v-3h2v3h3V6.5"/></svg>
     </button>
-    <button id="btnReload" title="Neu laden">
+    <button id="btnReload" data-i18n-title="bar.reload">
       <svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3"/></svg>
     </button>
     <form id="urlForm">
@@ -317,7 +340,7 @@
     <button id="btnStar" title="Als Lesezeichen speichern (Strg+D)">
       <svg viewBox="0 0 16 16"><path id="starIcon" d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6Z"/></svg>
     </button>
-    <div class="opacity" title="Deckkraft">
+    <div class="opacity" data-i18n-title="bar.opacity">
       <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>
       <input id="opacity" type="range" min="20" max="100" step="5">
     </div>
@@ -325,7 +348,7 @@
       <button id="btnVol" title="Stumm an/aus">
         <svg viewBox="0 0 16 16"><path class="vol-icon" d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5Z"/></svg>
       </button>
-      <input id="volume" type="range" min="0" max="100" step="1" title="YouTube-Lautstärke">
+      <input id="volume" type="range" min="0" max="100" step="1" data-i18n-title="bar.volumeSlider">
       <span id="volumeValue">100</span>
     </div>
     <div class="sep"></div>
@@ -334,6 +357,12 @@
     </button>
     <button id="btnCinema" title="Kino-Modus: Video füllt das Overlay">
       <svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+    </button>
+    <button id="btnTwitch" title="Twitch-Modus: Stream + Chat nebeneinander">
+      <svg viewBox="0 0 16 16"><path d="M3 2h10.5v7l-3 3H8l-2.2 2.2V12H3Z"/><path d="M8 5v3M10.8 5v3"/></svg>
+    </button>
+    <button id="btnSplit" title="Geteilte Ansicht: zwei Seiten nebeneinander">
+      <svg viewBox="0 0 16 16"><rect x="1.8" y="3" width="12.4" height="10" rx="1.2"/><path d="M8 3v10"/></svg>
     </button>
     <button id="btnFocus" title="Fokus-Modus: ohne Maus durchsichtig">
       <svg viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="2.2"/><path id="focusSlash" d="M2.5 13.5l11-11"/></svg>
@@ -344,7 +373,7 @@
     <button id="btnBar" title="Leiste ausblenden">
       <svg viewBox="0 0 16 16"><path id="barIcon" d="M3.5 10 8 5.5l4.5 4.5"/></svg>
     </button>
-    <button id="btnSettings" title="Einstellungen (Werbeblocker, Hotkeys)">
+    <button id="btnSettings" data-i18n-title="bar.settings">
       <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4"/></svg>
     </button>
     <div class="drag"></div>
@@ -360,7 +389,7 @@
     </button>
   </div>
   <div id="mini">
-    <div class="emblem" title="YouTube Overlay – an der Leiste verschieben">
+    <div class="emblem" data-i18n-title="bar.emblem">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 1.5 22.5 12 12 22.5 1.5 12Z" style="fill:var(--btn-2);stroke:var(--gold)" stroke-width="1.5"/>
         <path d="M10 8.3v7.4l6-3.7Z" style="fill:var(--emblem-play)"/>
@@ -382,7 +411,7 @@
   </div>
   <div id="tabs">
     <div id="tabList"></div>
-    <button id="btnNewTab" title="Neuer Tab (Strg+T)">
+    <button id="btnNewTab">
       <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg>
     </button>
     <div class="fill"></div>
@@ -391,7 +420,9 @@
   <div id="bookmarks" hidden>
     <div id="bmList"></div>
   </div>
+  <div id="splitDivider" hidden data-i18n-title="bar.divider"><span></span></div>
   <div id="status"></div>
+  <script src="i18n.js"></script>
   <script src="keys.js"></script>
   <script src="bar.js"></script>
 </body>

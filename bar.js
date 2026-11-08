@@ -3,19 +3,47 @@
 const $ = (id) => document.getElementById(id);
 const api = window.overlay;
 
+let lang = 'de';
+let i18nApplied = false;
+const T = (key, vars) => tr(lang, key, vars);
+const fmt = (accel) => formatAccelerator(accel, lang);
+
 const urlInput = $('url');
 const opacity = $('opacity');
 const status = $('status');
 let editingUrl = false;
 let statusTimer = null;
 
+// Twitch-Eingabemodus: Das Adressfeld fragt nach dem Kanalnamen
+let twitchPrompt = false;
+let normalPlaceholder = '';
+function setTwitchPrompt(on) {
+  twitchPrompt = on;
+  urlInput.classList.toggle('twitch-mode', on);
+  if (on) {
+    normalPlaceholder = urlInput.placeholder;
+    urlInput.value = '';
+    urlInput.placeholder = T('bar.twitchPrompt');
+    urlInput.focus();
+  } else if (normalPlaceholder) {
+    urlInput.placeholder = normalPlaceholder;
+  }
+}
+
 $('urlForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  api.navigate(urlInput.value);
+  if (twitchPrompt) {
+    const ch = urlInput.value.trim();
+    setTwitchPrompt(false);
+    if (ch) api.openTwitch(ch);
+  } else {
+    api.navigate(urlInput.value);
+  }
   urlInput.blur();
 });
 urlInput.addEventListener('focus', () => { editingUrl = true; urlInput.select(); });
-urlInput.addEventListener('blur', () => { editingUrl = false; });
+urlInput.addEventListener('blur', () => { editingUrl = false; if (twitchPrompt) setTimeout(() => setTwitchPrompt(false), 150); });
+urlInput.addEventListener('keydown', (e) => { if (e.key === 'Escape' && twitchPrompt) { setTwitchPrompt(false); urlInput.blur(); } });
 
 $('btnBack').addEventListener('click', () => api.back());
 $('btnHome').addEventListener('click', () => api.home());
@@ -24,6 +52,41 @@ $('btnShorts').addEventListener('click', () => api.shorts());
 $('btnCinema').addEventListener('click', () => api.cinema());
 $('btnClick').addEventListener('click', () => api.toggleClickThrough());
 $('btnFocus').addEventListener('click', () => api.toggleFocus());
+$('btnSplit').addEventListener('click', () => api.toggleSplit());
+$('btnTwitch').addEventListener('click', () => api.toggleTwitch());
+api.onTwitchPrompt(() => setTwitchPrompt(true));
+
+// Trennbalken der geteilten Ansicht: Ziehen verfolgt der Hauptprozess (die Maus fährt dabei
+// über die Seiten), Loslassen meldet die Leiste bzw. die Seite, über der losgelassen wird.
+const divider = $('splitDivider');
+divider.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  divider.classList.add('dragging');
+  try { divider.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
+  api.splitDragStart();
+});
+const endDrag = () => {
+  if (!divider.classList.contains('dragging')) return;
+  divider.classList.remove('dragging');
+  api.splitDragEnd();
+};
+divider.addEventListener('pointerup', endDrag);
+divider.addEventListener('lostpointercapture', endDrag);
+window.addEventListener('pointerup', endDrag);
+divider.addEventListener('dblclick', () => api.splitReset());
+
+function renderSplit(sp) {
+  const on = !!(sp && sp.on && sp.divider);
+  $('btnSplit').classList.toggle('on', on);
+  divider.hidden = !on;
+  if (on) {
+    divider.style.left = `${sp.divider.x}px`;
+    divider.style.top = `${sp.divider.y}px`;
+    divider.style.width = `${sp.divider.width}px`;
+    divider.style.height = `${sp.divider.height}px`;
+  }
+}
 $('btnBar').addEventListener('click', () => api.toggleBar());
 $('btnSettings').addEventListener('click', () => api.openSettings());
 $('btnMin').addEventListener('click', () => api.minimize());
@@ -90,25 +153,22 @@ function renderUpdate(u) {
   b.hidden = !show;
   if (!show) return;
   b.classList.toggle('busy', u.status === 'downloading');
-  b.classList.toggle('error', u.status === 'error' || (u.status === 'ready' && !!u.mandatory));
+  b.classList.toggle('error', u.status === 'error');
   b.disabled = u.status === 'downloading';
   if (u.status === 'available') {
-    b.textContent = `⬆ Update ${u.latest}`;
+    b.textContent = T('bar.update.available', { v: u.latest });
     b.title = u.selfUpdate
-      ? `Version ${u.latest} herunterladen (du hast ${u.current})`
-      : `Version ${u.latest} ist verfügbar – öffnet die Download-Seite`;
+      ? T('bar.update.availableTitle', { v: u.latest, c: u.current })
+      : T('bar.update.availablePage', { v: u.latest });
   } else if (u.status === 'downloading') {
-    b.textContent = `⬇ ${u.mandatory ? 'Pflicht-Update ' : 'Update '}${u.progress || 0} %`;
-    b.title = `Version ${u.latest} wird im Hintergrund heruntergeladen …`;
-  } else if (u.status === 'ready' && u.mandatory) {
-    b.textContent = u.countdown ? `↻ Pflicht-Update – Neustart in ${u.countdown} s` : '↻ Pflicht-Update – jetzt neu starten';
-    b.title = `Pflicht-Update auf ${u.latest}. Klick: sofort neu starten`;
+    b.textContent = T('bar.update.downloading', { p: u.progress || 0 });
+    b.title = T('bar.update.downloadingTitle', { v: u.latest });
   } else if (u.status === 'ready') {
-    b.textContent = '↻ Neu starten';
-    b.title = `Version ${u.latest} ist bereit. Klick: jetzt installieren – sonst automatisch beim Beenden`;
+    b.textContent = T('bar.update.ready');
+    b.title = T('bar.update.readyTitle', { v: u.latest });
   } else {
-    b.textContent = '⚠ Update fehlgeschlagen';
-    b.title = `${u.error || 'Fehler'} – Klick: erneut versuchen`;
+    b.textContent = T('bar.update.failed');
+    b.title = T('bar.update.failedTitle', { e: errorText(lang, u.error) });
   }
 }
 
@@ -120,7 +180,7 @@ function makeTabEl(id) {
   if (id !== 'yt') {
     const x = document.createElement('span');
     x.className = 'x';
-    x.title = 'Tab schließen (Strg+W)';
+    x.title = T('bar.tabClose', { k: fmt('Control+W') });
     x.innerHTML = CLOSE_ICON;
     x.addEventListener('click', (e) => { e.stopPropagation(); api.closeTab(id); });
     el.append(x);
@@ -158,7 +218,15 @@ function renderTabs(state) {
     if (!el) { el = makeTabEl(t.id); tabEls.set(String(t.id), el); }
     if (tabList.children[i] !== el) tabList.insertBefore(el, tabList.children[i] || null);
     el.classList.toggle('active', String(state.activeTab) === String(t.id));
-    el.querySelector('.title').textContent = t.title || 'Neuer Tab';
+    // Geteilte Ansicht: beide sichtbaren Tabs markieren (◧ links, ◨ rechts)
+    const sp = state.split || {};
+    const side = sp.on ? (String(sp.left) === String(t.id) ? 'left' : String(sp.right) === String(t.id) ? 'right' : null) : null;
+    el.classList.toggle('pane', !!side);
+    let mark = el.querySelector('.side');
+    if (side && !mark) { mark = document.createElement('span'); mark.className = 'side'; el.querySelector('.ico').after(mark); }
+    if (mark) { if (side) mark.textContent = side === 'left' ? '◧' : '◨'; else mark.remove(); }
+    el.querySelector('.title').textContent = t.title || T('bar.newTabTitle');
+    if (t.id !== 'yt') { const x = el.querySelector('.x'); if (x) x.title = T('bar.tabClose', { k: fmt('Control+W') }); }
     el.title = t.title || '';
     if (t.yt) setIcon(el, 'yt');
     else if (t.loading) setIcon(el, 'loading');
@@ -272,7 +340,7 @@ function renderBookmarks(state) {
     el.classList.remove('bm-removing');
     if (bmList.children[i] !== el) bmList.insertBefore(el, bmList.children[i] || null);
     el.querySelector('.title').textContent = b.title;
-    el.title = `${b.title}\n${b.url}\nKlick: öffnen · Mittelklick: neuer Tab · Rechtsklick: mehr · Ziehen: sortieren`;
+    el.title = `${b.title}\n${b.url}\n${T('bar.bmHelp')}`;
     bmIcon(el, b.favicon || '');
   });
   // Entfernte Lesezeichen kurz ausblenden, dann löschen
@@ -363,47 +431,60 @@ api.onEditBookmark((id) => {
 });
 
 let shownHotkeyWarning = false;
-const hk = (state, name) => (state.hotkeys && state.hotkeys[name] ? formatAccelerator(state.hotkeys[name]) : 'kein Hotkey');
+const hk = (state, name) => (state.hotkeys && state.hotkeys[name] ? fmt(state.hotkeys[name]) : T('bar.noHotkey'));
 
 api.onState((state) => {
+  // Feste Texte beim ersten Zustand und bei jedem Sprachwechsel setzen
+  if (!i18nApplied || (state.lang && state.lang !== lang)) {
+    if (state.lang) lang = state.lang;
+    applyI18n(document, lang);
+    $('btnNewTab').title = T('bar.newTab', { k: fmt('Control+T') });
+    i18nApplied = true;
+  }
   if (state.hotkeysChanged) shownHotkeyWarning = false;
   if (state.theme && document.documentElement.dataset.theme !== state.theme) {
     document.documentElement.dataset.theme = state.theme;
   }
   $('btnShorts').classList.toggle('on', !!state.shortsMode);
   $('btnShorts').title = state.shortsMode
-    ? `Shorts – weiter: ${hk(state, 'shortsNext')}, zurück: ${hk(state, 'shortsPrev')}`
-    : 'YouTube Shorts öffnen (Fenster wird hochkant)';
+    ? T('bar.shortsOn', { next: hk(state, 'shortsNext'), prev: hk(state, 'shortsPrev') })
+    : T('bar.shortsOff');
   if (!editingUrl) urlInput.value = state.url || '';
-  urlInput.placeholder = state.activeTab === 'yt'
-    ? 'YouTube-Link einfügen oder suchen …'
-    : 'Adresse eingeben oder mit Google suchen …';
-  $('btnHome').title = state.activeTab === 'yt' ? 'YouTube-Startseite' : 'Startseite (Google)';
+  if (!twitchPrompt) urlInput.placeholder = state.activeTab === 'yt' ? T('bar.placeholderYt') : T('bar.placeholderWeb');
+  $('btnHome').title = state.activeTab === 'yt' ? T('bar.homeYt') : T('bar.homeWeb');
   if (state.tabs) renderTabs(state);
+  renderSplit(state.split);
+  $('btnTwitch').classList.toggle('on', !!state.twitch);
+  $('btnTwitch').title = state.twitch
+    ? T('bar.twitchOn', { ch: state.twitch.channel })
+    : T('bar.twitchOff');
+  $('btnSplit').title = state.split && state.split.on
+    ? T('bar.splitOn', { k: hk(state, 'toggleSplit') })
+    : T('bar.splitOff', { k: hk(state, 'toggleSplit') });
   renderUpdate(state.update);
   if (state.bookmarks) renderBookmarks(state);
   $('btnStar').classList.toggle('saved', !!state.bookmarked);
-  $('btnStar').title = state.bookmarked ? 'Lesezeichen entfernen (Strg+D)' : 'Als Lesezeichen speichern (Strg+D)';
+  $('btnStar').title = state.bookmarked ? T('bar.starRemove', { k: fmt('Control+D') }) : T('bar.starAdd', { k: fmt('Control+D') });
   if (state.notice) showStatus(state.notice, 5000);
   $('btnBack').disabled = !state.canGoBack;
   opacity.value = Math.round(state.opacity * 100);
   $('btnClick').classList.toggle('on', !!state.clickThrough);
   if (typeof state.cinema === 'boolean') $('btnCinema').classList.toggle('on', state.cinema);
 
-  $('btnClick').title = `Durchklicken an/aus (${hk(state, 'clickThrough')})`;
+  $('btnClick').title = T('bar.clickThrough', { k: hk(state, 'clickThrough') });
   // Fokus-Modus: offenes Auge = an, durchgestrichen = aus
   $('btnFocus').classList.toggle('on', !!state.focusMode);
   $('focusSlash').style.display = state.focusMode ? 'none' : '';
   $('btnFocus').title = state.focusMode
-    ? `Fokus-Modus AN – ohne Maus ${Math.round((state.focusOpacity || 0.3) * 100)} % sichtbar. Klick: ausschalten (${hk(state, 'toggleFocus')})`
-    : `Fokus-Modus: Overlay wird durchsichtig, wenn die Maus nicht darüber ist. Klick: einschalten (${hk(state, 'toggleFocus')})`;
-  $('btnCinema').title = `Kino-Modus an/aus (${hk(state, 'cinema')})`;
+    ? T('bar.focusOn', { p: Math.round((state.focusOpacity || 0.3) * 100), k: hk(state, 'toggleFocus') })
+    : T('bar.focusOff', { k: hk(state, 'toggleFocus') });
+  $('btnCinema').title = T('bar.cinema', { k: hk(state, 'cinema') });
   // Ist die Leiste nur wegen der Maus aufgeklappt, macht der Knopf sie wieder dauerhaft sichtbar
   if (state.barVisible) {
-    $('btnBar').title = `Leiste ausblenden – erscheint wieder, wenn die Maus an den oberen Rand fährt (${hk(state, 'toggleBar')})`;
+    $('btnBar').title = T('bar.barHide', { k: hk(state, 'toggleBar') });
     $('barIcon').setAttribute('d', 'M3.5 10 8 5.5l4.5 4.5');
   } else {
-    $('btnBar').title = `Leiste dauerhaft anzeigen (${hk(state, 'toggleBar')})`;
+    $('btnBar').title = T('bar.barShow', { k: hk(state, 'toggleBar') });
     $('barIcon').setAttribute('d', 'M3.5 6 8 10.5 12.5 6');
   }
 
@@ -411,12 +492,12 @@ api.onState((state) => {
   if (typeof state.volume === 'number') {
     currentVolume = state.volume;
     if (!volumeDragging) volume.value = state.volume;
-    $('volumeValue').textContent = state.muted ? 'aus' : state.volume;
+    $('volumeValue').textContent = state.muted ? T('bar.volOff') : state.volume;
     const d = volumeIconPath(state.volume, state.muted);
     document.querySelectorAll('.vol-icon').forEach((p) => p.setAttribute('d', d));
     for (const id of ['btnVol', 'miniVol']) {
       $(id).classList.toggle('muted', !!state.muted);
-      $(id).title = `${state.muted ? 'Ton an' : 'Stumm'} (${hk(state, 'mute')}) – Lautstärke ${state.volume} %, Mausrad oder ${hk(state, 'volumeUp')} / ${hk(state, 'volumeDown')}`;
+      $(id).title = T('bar.volTitle', { action: state.muted ? T('bar.unmute') : T('bar.mute'), k: hk(state, 'mute'), v: state.volume, up: hk(state, 'volumeUp'), down: hk(state, 'volumeDown') });
     }
   }
 
@@ -426,22 +507,22 @@ api.onState((state) => {
   $('miniTitle').title = state.ytTitle || '';
   $('miniTitle').classList.toggle('paused', !state.ytPlaying);
   $('miniPlayIcon').setAttribute('d', state.ytPlaying ? 'M5 3.5v9M11 3.5v9' : 'M5 3.5v9l7-4.5Z');
-  $('miniPlay').title = `${state.ytPlaying ? 'Pause' : 'Abspielen'} (${hk(state, 'playPause')})`;
-  $('miniRestore').title = `Wiederherstellen (${hk(state, 'toggleMini')})`;
-  $('miniClose').title = `Beenden (${hk(state, 'quitApp')})`;
-  $('btnMin').title = `Zur Mini-Leiste verkleinern – bleibt über WoW, Video läuft weiter (${hk(state, 'toggleMini')})`;
+  $('miniPlay').title = `${state.ytPlaying ? T('bar.pause') : T('bar.play')} (${hk(state, 'playPause')})`;
+  $('miniRestore').title = T('bar.restore', { k: hk(state, 'toggleMini') });
+  $('miniClose').title = T('bar.quit', { k: hk(state, 'quitApp') });
+  $('btnMin').title = T('bar.mini', { k: hk(state, 'toggleMini') });
   $('btnMax').title = state.maximized
-    ? `Normalgröße (${hk(state, 'toggleMaximize')})`
-    : `Maximieren – Overlay füllt den Bildschirm (${hk(state, 'toggleMaximize')})`;
+    ? T('bar.maxOn', { k: hk(state, 'toggleMaximize') })
+    : T('bar.maxOff', { k: hk(state, 'toggleMaximize') });
   $('maxIcon').setAttribute('d', state.maximized
     ? 'M5.5 3.5h7v7M3.5 5.5h7v7h-7Z'
     : 'M3.5 3.5h9v9h-9Z');
-  $('btnClose').title = `Beenden (${hk(state, 'quitApp')})`;
+  $('btnClose').title = T('bar.quit', { k: hk(state, 'quitApp') });
 
   // Im Durchklick-Modus ist die Leiste nicht klickbar -> dauerhaft zeigen, wie man zurückkommt
   if (state.clickThrough) {
     clearTimeout(statusTimer);
-    status.textContent = `Durchklicken an – ${hk(state, 'clickThrough')} zum Ausschalten (oder Tray-Symbol)`;
+    status.textContent = T('bar.clickThroughSticky', { k: hk(state, 'clickThrough') });
     status.classList.add('sticky');
     status.style.display = 'block';
   } else if (status.classList.contains('sticky')) {
@@ -451,6 +532,6 @@ api.onState((state) => {
   if (!shownHotkeyWarning && state.failedHotkeys && state.failedHotkeys.length) {
     shownHotkeyWarning = true;
     const n = state.failedHotkeys.length;
-    showStatus(`${n === 1 ? '1 Hotkey ist' : `${n} Hotkeys sind`} von einem anderen Programm belegt – Details unter ✱ Einstellungen`, 6000);
+    showStatus(n === 1 ? T('bar.hotkeysBusy1') : T('bar.hotkeysBusyN', { n }), 6000);
   }
 });

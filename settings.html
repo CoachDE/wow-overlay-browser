@@ -95,6 +95,13 @@
       box-shadow: 0 0 6px color-mix(in srgb, var(--gold-light) 70%, transparent);
     }
     .toggle:hover .switch { border-color: var(--gold); }
+    .lang-row { cursor: default; }
+    .langs { display: flex; gap: 4px; flex: none; }
+    .btn.lang { opacity: .7; }
+    .btn.lang.selected {
+      opacity: 1; color: var(--primary-text); border-color: var(--gold-light);
+      background: linear-gradient(180deg, var(--gold-light), var(--gold) 55%, var(--gold-dark));
+    }
     .range-row {
       flex: none; display: flex; align-items: center; gap: 10px;
       margin: 0 16px 4px; padding: 2px 0 6px; font-size: 12px; color: var(--muted);
@@ -183,62 +190,67 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>Einstellungen</h1>
-      <button id="btnX" class="icon" title="Schließen ohne Speichern (Esc)">
+      <h1 data-i18n="set.title">Einstellungen</h1>
+      <button id="btnX" class="icon" data-i18n-title="set.closeNoSave">
         <svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
       </button>
     </header>
-    <div class="section">Design</div>
+    <div class="section" data-i18n="set.design">Design</div>
     <div class="themes" id="themes"></div>
-    <div class="section">Allgemein</div>
+    <div class="section" data-i18n="set.general">Allgemein</div>
+    <div class="toggle lang-row">
+      <span class="toggle-text">
+        <span data-i18n="set.language">Sprache</span>
+        <small data-i18n="set.languageHint">Sprache der Oberfläche</small>
+      </span>
+      <div class="langs" id="languages"></div>
+    </div>
     <label class="toggle" for="optAdblock">
       <span class="toggle-text">
-        Werbeblocker
-        <small>Blockiert YouTube-Werbung und überspringt Werbeclips automatisch</small>
+        <span data-i18n="set.adblock">Werbeblocker</span>
+        <small data-i18n="set.adblockHint">Blockiert YouTube-Werbung und überspringt Werbeclips automatisch</small>
       </span>
       <input type="checkbox" id="optAdblock">
       <span class="switch"></span>
     </label>
     <label class="toggle" for="optFocus">
       <span class="toggle-text">
-        Fokus-Modus
-        <small>Overlay wird durchsichtig, wenn die Maus nicht darüber ist (Auge-Knopf oben)</small>
+        <span data-i18n="set.focus">Fokus-Modus</span>
+        <small data-i18n="set.focusHint">Overlay wird durchsichtig, wenn die Maus nicht darüber ist (Auge-Knopf oben)</small>
       </span>
       <input type="checkbox" id="optFocus">
       <span class="switch"></span>
     </label>
     <div class="range-row">
-      <span>Deckkraft ohne Maus</span>
+      <span data-i18n="set.focusOpacity">Deckkraft ohne Maus</span>
       <input type="range" id="optFocusOpacity" min="10" max="90" step="5">
       <span id="optFocusOpacityValue">30 %</span>
     </div>
     <label class="toggle" for="optBookmarks">
       <span class="toggle-text">
-        Lesezeichen-Leiste
-        <small>Zeigt gespeicherte Seiten unter den Tabs (☆ im Adressfeld oder Strg+D)</small>
+        <span data-i18n="set.bookmarks">Lesezeichen-Leiste</span>
+        <small data-i18n="set.bookmarksHint">Zeigt gespeicherte Seiten unter den Tabs (☆ im Adressfeld oder Strg+D)</small>
       </span>
       <input type="checkbox" id="optBookmarks">
       <span class="switch"></span>
     </label>
-    <div class="section">Hotkeys</div>
-    <div class="hint">
-      Auf eine Taste klicken und die neue Kombination drücken (z.&nbsp;B. Strg + Alt + Taste).
-      Esc bricht ab. Die Hotkeys funktionieren überall, auch während WoW aktiv ist.
-    </div>
+    <div class="section" data-i18n="set.hotkeys">Hotkeys</div>
+    <div class="hint" data-i18n="set.hotkeysHint"></div>
     <div class="list" id="list"></div>
     <div id="msg"></div>
     <div class="about">
       <span id="aboutVersion">Version –</span>
       <span id="aboutStatus"></span>
-      <button class="btn small" id="btnCheckUpdate">Nach Updates suchen</button>
+      <button class="btn small" id="btnCheckUpdate" data-i18n="set.checkUpdates">Nach Updates suchen</button>
     </div>
     <footer>
-      <button class="btn" id="btnDefaults">Standard</button>
+      <button class="btn" id="btnDefaults" data-i18n="set.defaults">Standard</button>
       <div class="grow"></div>
-      <button class="btn" id="btnCancel">Abbrechen</button>
-      <button class="btn primary" id="btnSave">Speichern</button>
+      <button class="btn" id="btnCancel" data-i18n="set.cancel">Abbrechen</button>
+      <button class="btn primary" id="btnSave" data-i18n="set.save">Speichern</button>
     </footer>
   </div>
+  <script src="i18n.js"></script>
   <script src="keys.js"></script>
   <script src="settings.js"></script>
 </body>

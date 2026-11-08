@@ -4,6 +4,10 @@ const { app, BrowserWindow, WebContentsView, globalShortcut, ipcMain, shell, scr
 const path = require('path');
 const fs = require('fs');
 const { formatAccelerator } = require('./keys.js');
+const { tr, errorText, LANGUAGES } = require('./i18n.js');
+// Text in der eingestellten Sprache
+const L = (key, vars) => tr(settings && settings.state ? settings.state.language : 'de', key, vars);
+const LANG_IDS = new Set(LANGUAGES.map((l) => l.id));
 const { YouTubeAdblock } = require('./adblock.js');
 const { Updater, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG } = require('./update.js');
 
@@ -45,6 +49,9 @@ const MAX_BOOKMARKS = 60;
 const START_PAGE = 'https://www.google.com/';
 const SEARCH_URL = 'https://www.google.com/search?q=';
 const MAX_TABS = 12;
+const SPLIT_GAP = 6;          // Breite des Trennbalkens der geteilten Ansicht
+const SPLIT_MIN = 0.2;
+const SPLIT_MAX = 0.8;
 const MINI_WIDTH = 280;      // Mini-Leiste (minimiert, bleibt über WoW)
 const MINI_HEIGHT = BAR_HEIGHT;
 const MIN_WIDTH = 240;
@@ -69,6 +76,7 @@ const DEFAULT_HOTKEYS = {
   toggleMaximize: 'Control+Alt+G',
   toggleMini: 'Control+Alt+H',
   toggleFocus: 'Control+Alt+T',
+  toggleSplit: 'Control+Alt+S',
   playPause: 'Control+Alt+K',
   seekBack: 'Control+Alt+J',
   seekForward: 'Control+Alt+L',
@@ -91,6 +99,7 @@ const HOTKEY_LABELS = {
   toggleMaximize: 'Maximieren / Normalgröße',
   toggleMini: 'Mini-Leiste / Wiederherstellen',
   toggleFocus: 'Fokus-Modus an/aus',
+  toggleSplit: 'Geteilte Ansicht an/aus',
   playPause: 'Play / Pause',
   seekBack: '10 Sekunden zurück',
   seekForward: '10 Sekunden vor',
@@ -113,7 +122,9 @@ const DEFAULT_STATE = {
   barVisible: true,
   adblock: true,           // Werbeblocker an/aus
   theme: 'gold',           // Design
+  language: null,          // 'de' | 'en' (null = beim ersten Start nach Windows-Sprache)
   focusMode: false,        // Fokus-Modus: ohne Maus durchsichtig
+  splitRatio: 0.5,         // geteilte Ansicht: Anteil der linken Seite
   focusOpacity: 0.3,       // Deckkraft im Fokus-Modus, wenn die Maus nicht über dem Overlay ist
   volume: null,            // YouTube-Lautstärke 0–100 (null = noch nie eingestellt)
   tabs: [],                // offene Browser-Tabs (Adressen), werden beim Start wiederhergestellt
@@ -156,7 +167,16 @@ function loadSettings() {
   const o = Number(settings.state.opacity);
   settings.state.opacity = Number.isFinite(o) ? clamp(o, MIN_OPACITY, MAX_OPACITY) : 1.0;
   if (!THEME_IDS.has(settings.state.theme)) settings.state.theme = 'gold';
+  if (!LANG_IDS.has(settings.state.language)) {
+    let loc = '';
+    try { loc = app.getLocale() || ''; } catch (_) { /* vor "ready" nicht verfügbar */ }
+    settings.state.language = /^de\b/i.test(loc) ? 'de' : 'en';
+  }
   settings.state.focusMode = settings.state.focusMode === true;
+  {
+    const r = Number(settings.state.splitRatio);
+    settings.state.splitRatio = Number.isFinite(r) ? clamp(r, SPLIT_MIN, SPLIT_MAX) : 0.5;
+  }
   {
     const f = Number(settings.state.focusOpacity);
     settings.state.focusOpacity = Number.isFinite(f) ? clamp(f, FOCUS_MIN, FOCUS_MAX) : 0.3;
@@ -301,6 +321,12 @@ let updatePopup = null;       // Fenster "Neue Version verfügbar"
 let updateRequested = false;  // im Pop-up wurde "Jetzt aktualisieren" geklickt
 let tabs = [];                // Browser-Tabs: { id, view, title, favicon, loading, pendingUrl }
 let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-Tabs
+// Geteilte Ansicht: links/rechts je ein Tab ('yt' oder id eines Browser-Tabs)
+const split = { on: false, left: 'yt', right: null };
+let splitDivider = null;      // Position des Trennbalkens (für die Leiste)
+let splitDrag = null;         // laufendes Ziehen des Trennbalkens
+let lastBrowserTab = null;
+let twitch = null;            // Twitch-Modus: { channel, player, chat } (Tab-ids)
 let nextTabId = 1;
 let previewTheme = null;      // Design-Vorschau, solange die Einstellungen offen sind
 let miniMode = false;         // Overlay ist zur Mini-Leiste verkleinert
@@ -508,6 +534,21 @@ function layout() {
     width: Math.max(0, w - BORDER * 2),
     height: Math.max(0, h - top - BORDER)
   };
+  // Geteilte Ansicht: zwei Tabs nebeneinander, dazwischen der Trennbalken
+  if (splitActive()) {
+    const avail = Math.max(0, bounds.width - SPLIT_GAP);
+    const leftW = Math.round(avail * settings.state.splitRatio);
+    const leftRect = { x: bounds.x, y: bounds.y, width: leftW, height: bounds.height };
+    const rightRect = { x: bounds.x + leftW + SPLIT_GAP, y: bounds.y, width: Math.max(0, avail - leftW), height: bounds.height };
+    splitDivider = { x: bounds.x + leftW, y: bounds.y, width: SPLIT_GAP, height: bounds.height };
+    for (const [id, view] of allViews()) {
+      if (id === split.left) { view.setBounds(leftRect); view.setVisible(true); }
+      else if (id === split.right) { view.setBounds(rightRect); view.setVisible(true); }
+      else { view.setBounds(bounds); view.setVisible(false); }
+    }
+    return;
+  }
+  splitDivider = null;
   // Alle Tabs liegen übereinander, nur der aktive ist sichtbar (in der Mini-Leiste keiner)
   ytView.setBounds(bounds);
   ytView.setVisible(!miniMode && activeTab === 'yt');
@@ -515,6 +556,22 @@ function layout() {
     t.view.setBounds(bounds);
     t.view.setVisible(!miniMode && t.id === activeTab);
   }
+}
+
+// [id, view] aller Seiten (YouTube + Browser-Tabs)
+function allViews() {
+  return [['yt', ytView], ...tabs.map((t) => [t.id, t.view])];
+}
+
+function viewOf(id) {
+  if (id === 'yt') return ytView;
+  const t = tabs.find((x) => x.id === id);
+  return t ? t.view : null;
+}
+
+function splitActive() {
+  return split.on && !miniMode && split.right !== null && split.left !== split.right &&
+    !!viewOf(split.left) && !!viewOf(split.right);
 }
 
 function bookmarksShown() {
@@ -590,6 +647,7 @@ function defaultShortsSize(cur) {
 // beim Verlassen kehrt es zur normalen Größe zurück. Beide Größen werden gemerkt.
 // Die rechte obere Ecke bleibt dabei an ihrem Platz.
 function applyShortsMode(on) {
+  if (split.on) return;   // in der geteilten Ansicht bleibt das Fenster quer
   if (!win || on === shortsMode || win.isMinimized()) return;
   if (maximized || miniMode) { shortsMode = on; return; }
   const cur = win.getBounds();
@@ -642,6 +700,8 @@ function sendState(extra = {}) {
     focusMode: settings.state.focusMode,
     focusOpacity: settings.state.focusOpacity,
     focusFaded,
+    twitch: twitchActive() ? { channel: twitch.channel } : null,
+    split: { on: splitActive(), left: split.left, right: split.right, divider: splitDivider, ratio: settings.state.splitRatio },
     ytPlaying,
     volume: Number.isFinite(settings.state.volume) ? settings.state.volume : 100,
     muted: ytMuted,
@@ -650,6 +710,7 @@ function sendState(extra = {}) {
     adblockStatus: adblock ? adblock.status : 'laedt',
     update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
     version: CURRENT_VERSION,
+    lang: settings.state.language,
     bookmarks: settings.state.bookmarks,
     showBookmarks: bookmarksShown(),
     bookmarked: !!findBookmark(currentPage().url),
@@ -729,8 +790,8 @@ function setFocusMode(on, announce = true) {
   saveSettingsSoon();
   sendState(announce ? {
     notice: on
-      ? `Fokus-Modus an – ohne Maus wird das Overlay auf ${Math.round(settings.state.focusOpacity * 100)} % abgeblendet`
-      : 'Fokus-Modus aus'
+      ? L('main.focusOn', { p: Math.round(settings.state.focusOpacity * 100) })
+      : L('main.focusOff')
   } : {});
 }
 
@@ -996,7 +1057,7 @@ function activeView() {
 }
 
 function hostLabel(url) {
-  try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return 'Neuer Tab'; }
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return L('main.tabNew'); }
 }
 
 // Fremder Link aus YouTube oder einer Website: http(s) -> neuer Tab, mailto -> Mailprogramm,
@@ -1009,7 +1070,7 @@ function openExternalLink(url) {
 function createTab(url, activate = true, lazy = false) {
   if (!win) return null;
   if (tabs.length >= MAX_TABS) {
-    sendState({ notice: `Höchstens ${MAX_TABS} Browser-Tabs – bitte einen schließen.` });
+    sendState({ notice: L('main.maxTabs', { n: MAX_TABS }) });
     return null;
   }
   const view = new WebContentsView({
@@ -1045,7 +1106,11 @@ function wireTab(tab) {
       openExternalLink(url);
     }
   });
-  wc.on('page-title-updated', (_e, title) => { tab.title = title || hostLabel(wc.getURL()); sendState(); });
+  wc.on('page-title-updated', (_e, title) => {
+    if (twitch && (tab.id === twitch.player || tab.id === twitch.chat)) return;
+    tab.title = title || hostLabel(wc.getURL());
+    sendState();
+  });
   wc.on('page-favicon-updated', (_e, favicons) => {
     tab.favicon = (favicons || []).find((f) => /^(https?:|data:image\/)/i.test(f)) || '';
     sendState();
@@ -1054,21 +1119,28 @@ function wireTab(tab) {
   wc.on('did-stop-loading', () => { tab.loading = false; sendState(); });
   wc.on('did-navigate', () => { tab.favicon = ''; saveTabsSoon(); sendState(); });
   wc.on('did-navigate-in-page', () => { saveTabsSoon(); sendState(); });
-  wc.on('render-process-gone', () => { tab.title = 'Seite abgestürzt – neu laden'; sendState(); });
+  wc.on('render-process-gone', () => { tab.title = L('main.tabCrashed'); sendState(); });
   attachCommonHandlers(wc);
+}
+
+// Wiederhergestellter Tab wird erst geladen, wenn er gebraucht wird
+function ensureLoaded(id) {
+  const t = tabs.find((x) => x.id === id);
+  if (t && t.pendingUrl) {
+    const url = t.pendingUrl;
+    t.pendingUrl = null;
+    t.view.webContents.loadURL(url).catch(() => {});
+  }
 }
 
 function activateTab(id) {
   if (!win) return;
   if (id !== 'yt' && !tabs.some((t) => t.id === id)) id = 'yt';
   activeTab = id;
-  const t = tabs.find((x) => x.id === id);
-  if (t && t.pendingUrl) {
-    // Wiederhergestellter Tab wird erst beim ersten Anklicken geladen
-    const url = t.pendingUrl;
-    t.pendingUrl = null;
-    t.view.webContents.loadURL(url).catch(() => {});
-  }
+  if (id !== 'yt') lastBrowserTab = id;
+  // Geteilte Ansicht: links bleibt fest, ein anderer Tab kommt nach rechts
+  if (split.on && id !== split.left) split.right = id;
+  ensureLoaded(id);
   layout();
   // Shorts-Hochformat nur, solange der YouTube-Tab mit einem Short aktiv ist
   applyShortsMode(id === 'yt' && !!ytView && isShortsUrl(ytView.webContents.getURL()));
@@ -1079,9 +1151,20 @@ function activateTab(id) {
 function closeTab(id) {
   const i = tabs.findIndex((t) => t.id === id);
   if (i < 0) return;
+  if (twitch && (id === twitch.player || id === twitch.chat)) twitch = null;
   const [tab] = tabs.splice(i, 1);
   if (win) win.contentView.removeChildView(tab.view);
   try { tab.view.webContents.close(); } catch (_) { /* schon zu */ }
+  if (split.on) {
+    if (id === split.left) {
+      setSplit(false);           // linke Seite weg (z. B. Twitch-Player) -> normale Ansicht
+    } else if (id === split.right) {
+      const other = tabs.find((t) => t.id !== split.left);
+      if (other) split.right = other.id;
+      else if (split.left !== 'yt') split.right = 'yt';
+      else setSplit(false);
+    }
+  }
   if (activeTab === id) {
     const next = tabs[i] || tabs[i - 1];
     activateTab(next ? next.id : 'yt');
@@ -1090,6 +1173,159 @@ function closeTab(id) {
     sendState();
   }
   saveTabsSoon();
+}
+
+// ---------------------------------------------------------------------------
+// Geteilte Ansicht
+// ---------------------------------------------------------------------------
+// left/right optional (z. B. Twitch-Modus: Player links, Chat rechts)
+function setSplit(on, left, right) {
+  if (!win) return;
+  if (on) {
+    if (miniMode) exitMini();
+    applyShortsMode(false);              // Fenster zurück ins Querformat
+    split.left = left !== undefined ? left : 'yt';
+    if (right !== undefined) {
+      split.right = right;
+    } else {
+      // rechts: aktiver Browser-Tab, sonst der zuletzt benutzte, sonst neuer Tab mit Startseite
+      let r = activeTab !== split.left ? activeTab : null;
+      if (r === null || r === 'yt') {
+        const last = tabs.find((t) => t.id === lastBrowserTab) || tabs[tabs.length - 1];
+        r = last ? last.id : null;
+      }
+      if (r === null) {
+        const t = createTab(START_PAGE, false);
+        r = t ? t.id : null;
+      }
+      split.right = r;
+    }
+    if (split.right === null) return;
+    split.on = true;
+    ensureLoaded(split.left);
+    ensureLoaded(split.right);
+    if (activeTab !== split.left && activeTab !== split.right) activeTab = split.right;
+  } else {
+    split.on = false;
+    endSplitDrag();
+    twitch = null;
+  }
+  layout();
+  if (!split.on) applyShortsMode(activeTab === 'yt' && !!ytView && isShortsUrl(ytView.webContents.getURL()));
+  sendState();
+}
+
+function setSplitRatio(r) {
+  settings.state.splitRatio = Math.round(clamp(Number(r) || 0.5, SPLIT_MIN, SPLIT_MAX) * 1000) / 1000;
+  layout();
+  saveSettingsSoon();
+  sendState();
+}
+
+// Trennbalken ziehen: Die Maus wird vom Hauptprozess verfolgt, weil sie beim Ziehen
+// über die Seiten links/rechts fährt (deren Mausereignisse bekommt die Leiste nicht).
+function startSplitDrag() {
+  if (!splitActive() || splitDrag) return;
+  splitDrag = setInterval(() => {
+    if (!win || !splitActive()) { endSplitDrag(); return; }
+    const p = screen.getCursorScreenPoint();
+    const cb = win.getContentBounds();
+    const [w] = win.getContentSize();
+    const avail = Math.max(1, w - BORDER * 2 - SPLIT_GAP);
+    const x = p.x - cb.x - BORDER - SPLIT_GAP / 2;
+    const r = clamp(x / avail, SPLIT_MIN, SPLIT_MAX);
+    if (Math.abs(r - settings.state.splitRatio) > 0.002) {
+      settings.state.splitRatio = r;
+      layout();
+      sendState();
+    }
+  }, 16);
+}
+
+function endSplitDrag() {
+  if (!splitDrag) return;
+  clearInterval(splitDrag);
+  splitDrag = null;
+  settings.state.splitRatio = Math.round(settings.state.splitRatio * 1000) / 1000;
+  saveSettingsSoon();
+  sendState();
+}
+
+// ---------------------------------------------------------------------------
+// Twitch-Modus: Stream (reiner Player) links, Chat rechts – in der geteilten Ansicht
+// ---------------------------------------------------------------------------
+const TWITCH_RESERVED = new Set([
+  'directory', 'videos', 'settings', 'p', 'downloads', 'jobs', 'search', 'subscriptions', 'inventory',
+  'wallet', 'drops', 'prime', 'turbo', 'store', 'friends', 'messages', 'login', 'signup', 'user',
+  'privacy', 'legal', 'team', 'moderator', 'following', 'broadcast', 'dashboard', 'popout', 'clips', 'collections'
+]);
+const TWITCH_NAME = /^[a-z0-9_]{2,25}$/i;
+const TWITCH_RATIO = 0.7;
+
+// Kanalname aus einer Twitch-Adresse (Kanalseite, Player oder Popout-Chat)
+function twitchChannelFrom(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^(www|m)\./, '');
+    if (host === 'player.twitch.tv') {
+      const c = u.searchParams.get('channel');
+      return c && TWITCH_NAME.test(c) ? c : null;
+    }
+    if (host === 'twitch.tv') {
+      const parts = u.pathname.split('/').filter(Boolean);
+      if (parts[0] === 'popout' && parts[1] && TWITCH_NAME.test(parts[1])) return parts[1];
+      if (parts[0] && TWITCH_NAME.test(parts[0]) && !TWITCH_RESERVED.has(parts[0].toLowerCase())) return parts[0];
+    }
+  } catch (_) { /* keine Adresse */ }
+  return null;
+}
+
+function twitchActive() {
+  return !!twitch && split.on && split.left === twitch.player && tabs.some((t) => t.id === twitch.player);
+}
+
+// Twitch-Modus starten. input: Kanalname oder Twitch-Adresse; ohne input wird der aktuelle Tab genommen.
+function startTwitch(input) {
+  if (!win) return;
+  let ch = null;
+  if (input) {
+    const text = String(input).trim();
+    ch = twitchChannelFrom(/^https?:\/\//i.test(text) ? text : 'https://www.twitch.tv/' + text.replace(/^@/, ''));
+  } else {
+    const v = activeView();
+    ch = v ? twitchChannelFrom(v.webContents.getURL()) : null;
+  }
+  if (!ch) {
+    // Kein Kanal bekannt: im Adressfeld nach dem Kanal fragen
+    focusAddressBar();
+    win.webContents.send('twitch-prompt');
+    return;
+  }
+  if (twitchActive()) stopTwitch();
+  const playerUrl = `https://player.twitch.tv/?channel=${encodeURIComponent(ch)}&parent=twitch.tv`;
+  const chatUrl = `https://www.twitch.tv/popout/${encodeURIComponent(ch)}/chat?popout=`;
+  // Ist gerade eine Twitch-Seite offen, wird sie zum Player
+  let player = activeTab !== 'yt' && twitchChannelFrom(activeView().webContents.getURL()) ? tabs.find((t) => t.id === activeTab) : null;
+  if (player) player.view.webContents.loadURL(playerUrl).catch(() => {});
+  else player = createTab(playerUrl, false);
+  const chat = player ? createTab(chatUrl, false) : null;
+  if (!player || !chat) return;
+  player.title = `Twitch: ${ch}`;
+  chat.title = `Chat: ${ch}`;
+  twitch = { channel: ch, player: player.id, chat: chat.id };
+  settings.state.splitRatio = TWITCH_RATIO;
+  saveSettingsSoon();
+  activeTab = player.id;
+  setSplit(true, player.id, chat.id);
+}
+
+// Twitch-Modus beenden: Player und Chat schließen
+function stopTwitch() {
+  const t = twitch;
+  twitch = null;
+  if (!t) return;
+  setSplit(false);
+  for (const id of [t.chat, t.player]) if (tabs.some((x) => x.id === id)) closeTab(id);
 }
 
 function cycleTab(dir) {
@@ -1184,7 +1420,7 @@ function bookmarksChanged() {
 function addBookmark(url, title, favicon) {
   if (!isWebUrl(url) || findBookmark(url)) return;
   if (settings.state.bookmarks.length >= MAX_BOOKMARKS) {
-    sendState({ notice: `Höchstens ${MAX_BOOKMARKS} Lesezeichen – bitte erst eins löschen.` });
+    sendState({ notice: L('main.maxBookmarks', { n: MAX_BOOKMARKS }) });
     return;
   }
   settings.state.bookmarks.push({
@@ -1243,13 +1479,13 @@ function bookmarkMenu(id) {
   const b = settings.state.bookmarks.find((x) => x.id === id);
   if (!b || !win) return;
   Menu.buildFromTemplate([
-    { label: 'Öffnen', click: () => openBookmark(id, false) },
-    { label: 'In neuem Tab öffnen', click: () => openBookmark(id, true) },
+    { label: L('cm.open'), click: () => openBookmark(id, false) },
+    { label: L('cm.openNewTab'), click: () => openBookmark(id, true) },
     { type: 'separator' },
-    { label: 'Umbenennen …', click: () => win.webContents.send('bookmark:edit', id) },
-    { label: 'Adresse kopieren', click: () => clipboard.writeText(b.url) },
+    { label: L('cm.rename'), click: () => win.webContents.send('bookmark:edit', id) },
+    { label: L('cm.copyAddress'), click: () => clipboard.writeText(b.url) },
     { type: 'separator' },
-    { label: 'Löschen', click: () => removeBookmark(id) }
+    { label: L('cm.delete'), click: () => removeBookmark(id) }
   ]).popup({ window: win });
 }
 
@@ -1282,50 +1518,51 @@ function attachContextMenu(wc) {
   wc.on('context-menu', (_e, p) => {
     const items = [];
     if (p.linkURL && isWebUrl(p.linkURL)) {
-      items.push({ label: 'Link in neuem Tab öffnen', click: () => createTab(p.linkURL, true) });
-      items.push({ label: 'Link-Adresse kopieren', click: () => clipboard.writeText(p.linkURL) });
+      items.push({ label: L('cm.linkNewTab'), click: () => createTab(p.linkURL, true) });
+      items.push({ label: L('cm.copyLink'), click: () => clipboard.writeText(p.linkURL) });
       if (!findBookmark(p.linkURL)) {
-        items.push({ label: 'Link als Lesezeichen speichern', click: () => addBookmark(p.linkURL, (p.linkText || '').trim() || hostLabel(p.linkURL)) });
+        items.push({ label: L('cm.bookmarkLink'), click: () => addBookmark(p.linkURL, (p.linkText || '').trim() || hostLabel(p.linkURL)) });
       }
       items.push({ type: 'separator' });
     }
     if (p.isEditable) {
-      items.push({ label: 'Ausschneiden', role: 'cut', enabled: p.editFlags.canCut });
-      items.push({ label: 'Kopieren', role: 'copy', enabled: p.editFlags.canCopy });
-      items.push({ label: 'Einfügen', role: 'paste', enabled: p.editFlags.canPaste });
-      items.push({ label: 'Alles auswählen', role: 'selectAll' });
+      items.push({ label: L('cm.cut'), role: 'cut', enabled: p.editFlags.canCut });
+      items.push({ label: L('cm.copy'), role: 'copy', enabled: p.editFlags.canCopy });
+      items.push({ label: L('cm.paste'), role: 'paste', enabled: p.editFlags.canPaste });
+      items.push({ label: L('cm.selectAll'), role: 'selectAll' });
       items.push({ type: 'separator' });
     } else if (p.selectionText && p.selectionText.trim()) {
       const sel = p.selectionText.trim();
-      items.push({ label: 'Kopieren', role: 'copy' });
-      items.push({ label: `Mit Google suchen: „${sel.length > 24 ? sel.slice(0, 24) + '…' : sel}“`, click: () => createTab(SEARCH_URL + encodeURIComponent(sel), true) });
+      items.push({ label: L('cm.copy'), role: 'copy' });
+      items.push({ label: L('cm.search', { s: sel.length > 24 ? sel.slice(0, 24) + '…' : sel }), click: () => createTab(SEARCH_URL + encodeURIComponent(sel), true) });
       items.push({ type: 'separator' });
     }
     if (p.mediaType === 'image' && isWebUrl(p.srcURL)) {
-      items.push({ label: 'Bild in neuem Tab öffnen', click: () => createTab(p.srcURL, true) });
+      items.push({ label: L('cm.imageNewTab'), click: () => createTab(p.srcURL, true) });
       items.push({ type: 'separator' });
     }
     const h = wc.navigationHistory;
-    items.push({ label: 'Zurück', enabled: h.canGoBack(), click: () => h.goBack() });
-    items.push({ label: 'Vorwärts', enabled: h.canGoForward(), click: () => h.goForward() });
-    items.push({ label: 'Neu laden', click: () => wc.reload() });
+    items.push({ label: L('cm.back'), enabled: h.canGoBack(), click: () => h.goBack() });
+    items.push({ label: L('cm.forward'), enabled: h.canGoForward(), click: () => h.goForward() });
+    items.push({ label: L('cm.reload'), click: () => wc.reload() });
     if (isWebUrl(wc.getURL())) {
       const saved = findBookmark(wc.getURL());
       items.push(saved
-        ? { label: 'Lesezeichen entfernen', click: () => removeBookmark(saved.id) }
-        : { label: 'Seite als Lesezeichen speichern', click: () => toggleBookmark() });
+        ? { label: L('cm.removeBookmark'), click: () => removeBookmark(saved.id) }
+        : { label: L('cm.bookmarkPage'), click: () => toggleBookmark() });
     }
     const url = wc.getURL();
     if (isWebUrl(url)) {
       items.push({ type: 'separator' });
-      items.push({ label: 'Seitenadresse kopieren', click: () => clipboard.writeText(url) });
-      items.push({ label: 'Im Windows-Browser öffnen', click: () => shell.openExternal(url) });
+      items.push({ label: L('cm.copyPageAddress'), click: () => clipboard.writeText(url) });
+      items.push({ label: L('cm.openExternal'), click: () => shell.openExternal(url) });
     }
     Menu.buildFromTemplate(items).popup({ window: win });
   });
 }
 
 function attachCommonHandlers(wc) {
+  wc.on('before-mouse-event', (_e, m) => { if (splitDrag && m.type === 'mouseUp') endSplitDrag(); });
   attachShortcuts(wc);
   attachContextMenu(wc);
 }
@@ -1343,12 +1580,12 @@ function setupSession(ses) {
       target = path.join(dir, `${parsed.name} (${n})${parsed.ext}`);
     }
     item.setSavePath(target);
-    sendState({ notice: `Download läuft: ${path.basename(target)}` });
+    sendState({ notice: L('main.downloadRunning', { f: path.basename(target) }) });
     item.once('done', (_ev, state) => {
       sendState({
         notice: state === 'completed'
-          ? `Download fertig: Downloads\\${path.basename(target)}`
-          : `Download abgebrochen: ${path.basename(target)}`
+          ? L('main.downloadDone', { f: path.basename(target) })
+          : L('main.downloadCancelled', { f: path.basename(target) })
       });
     });
   });
@@ -1385,6 +1622,7 @@ function toggleMaximize() {
 // Die rechte obere Ecke bleibt an ihrem Platz.
 function enterMini() {
   if (!win || miniMode) return;
+  endSplitDrag();
   if (win.isMinimized()) win.restore();
   if (maximized) {
     maximized = false;
@@ -1477,10 +1715,10 @@ function onUpdateState(st) {
     }, 1200);
   } else if (manualUpdateCheck && st.status === 'none') {
     manualUpdateCheck = false;
-    notice = `Du hast die neueste Version (${CURRENT_VERSION}).`;
+    notice = L('main.updateLatest', { v: CURRENT_VERSION });
   } else if (manualUpdateCheck && st.status === 'error') {
     manualUpdateCheck = false;
-    notice = `Update-Prüfung fehlgeschlagen: ${st.error}`;
+    notice = L('main.updateCheckFailed', { e: errorText(settings.state.language, st.error) });
   }
   sendState(notice ? { notice } : {});
 }
@@ -1565,7 +1803,7 @@ const isFromPopup = (event) => !!updatePopup && !updatePopup.isDestroyed() && ev
 
 ipcMain.handle('update:get', (event) => {
   if (!isFromPopup(event)) return null;
-  return { version: CURRENT_VERSION, update: updateInfo(), theme: settings.state.theme };
+  return { version: CURRENT_VERSION, update: updateInfo(), theme: settings.state.theme, lang: settings.state.language };
 });
 ipcMain.on('update:start', (event) => { if (isFromPopup(event)) startUpdate(); });
 
@@ -1575,7 +1813,7 @@ ipcMain.on('update:start', (event) => { if (isFromPopup(event)) startUpdate(); }
 // ---------------------------------------------------------------------------
 const withKey = (text, name) => {
   const accel = settings && settings.hotkeys[name];
-  return accel ? `${text}\t${formatAccelerator(accel)}` : text;
+  return accel ? `${text}\t${formatAccelerator(accel, settings.state.language)}` : text;
 };
 
 function createTray() {
@@ -1597,22 +1835,23 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'YouTube Overlay', enabled: false },
     { type: 'separator' },
-    { label: withKey(visible ? 'Overlay ausblenden' : 'Overlay anzeigen', 'toggleVisible'), click: () => toggleVisible() },
-    { label: withKey('Durchklicken', 'clickThrough'), type: 'checkbox', checked: clickThrough, click: () => setClickThrough(!clickThrough) },
-    { label: withKey('Fokus-Modus', 'toggleFocus'), type: 'checkbox', checked: !!(settings && settings.state.focusMode), click: () => setFocusMode(!settings.state.focusMode) },
-    { label: withKey('Leiste anzeigen', 'toggleBar'), type: 'checkbox', checked: !!(settings && settings.state.barVisible), click: () => setBarVisible(!settings.state.barVisible) },
-    { label: withKey(miniMode ? 'Mini-Leiste wiederherstellen' : 'Zur Mini-Leiste verkleinern', 'toggleMini'), click: () => toggleMini() },
-    { label: withKey(maximized ? 'Normalgröße' : 'Maximieren', 'toggleMaximize'), click: () => toggleMaximize() },
-    { label: 'Werbeblocker', type: 'checkbox', checked: settings.state.adblock !== false, click: () => setAdblock(settings.state.adblock === false) },
-    { label: 'Fenster zurücksetzen', click: () => resetWindowPosition() },
-    { label: 'Einstellungen …', click: () => openSettingsWindow() },
+    { label: withKey(visible ? L('tray.hide') : L('tray.show'), 'toggleVisible'), click: () => toggleVisible() },
+    { label: withKey(L('tray.clickThrough'), 'clickThrough'), type: 'checkbox', checked: clickThrough, click: () => setClickThrough(!clickThrough) },
+    { label: withKey(L('tray.split'), 'toggleSplit'), type: 'checkbox', checked: split.on, click: () => setSplit(!split.on) },
+    { label: withKey(L('tray.focus'), 'toggleFocus'), type: 'checkbox', checked: !!(settings && settings.state.focusMode), click: () => setFocusMode(!settings.state.focusMode) },
+    { label: withKey(L('tray.bar'), 'toggleBar'), type: 'checkbox', checked: !!(settings && settings.state.barVisible), click: () => setBarVisible(!settings.state.barVisible) },
+    { label: withKey(miniMode ? L('tray.miniRestore') : L('tray.mini'), 'toggleMini'), click: () => toggleMini() },
+    { label: withKey(maximized ? L('tray.normal') : L('tray.maximize'), 'toggleMaximize'), click: () => toggleMaximize() },
+    { label: L('tray.adblock'), type: 'checkbox', checked: settings.state.adblock !== false, click: () => setAdblock(settings.state.adblock === false) },
+    { label: L('tray.reset'), click: () => resetWindowPosition() },
+    { label: L('tray.settings'), click: () => openSettingsWindow() },
     updater && updater.state.status === 'ready'
-      ? { label: 'Update installieren und neu starten', click: () => updateAction() }
+      ? { label: L('tray.updateInstall'), click: () => updateAction() }
       : updater && updater.state.status === 'available'
-        ? { label: `Update auf ${updater.state.latest} herunterladen`, click: () => updateAction() }
-        : { label: `Nach Updates suchen (Version ${CURRENT_VERSION})`, click: () => checkForUpdatesManually() },
+        ? { label: L('tray.updateDownload', { v: updater.state.latest }), click: () => updateAction() }
+        : { label: L('tray.updateCheck', { v: CURRENT_VERSION }), click: () => checkForUpdatesManually() },
     { type: 'separator' },
-    { label: withKey('Beenden', 'quitApp'), click: () => app.quit() }
+    { label: withKey(L('tray.quit'), 'quitApp'), click: () => app.quit() }
   ]));
 }
 
@@ -1625,6 +1864,7 @@ const hotkeyActions = {
   toggleMaximize: () => toggleMaximize(),
   toggleMini: () => toggleMini(),
   toggleFocus: () => setFocusMode(!settings.state.focusMode),
+  toggleSplit: () => setSplit(!split.on),
   playPause: () => playerCommand('playPause'),
   seekBack: () => playerCommand('seekBack'),
   seekForward: () => playerCommand('seekForward'),
@@ -1654,7 +1894,7 @@ function registerHotkeys() {
     }
     if (!ok) {
       failedHotkeyNames.push(name);
-      failedHotkeys.push(`${HOTKEY_LABELS[name] || name} (${accel})`);
+      failedHotkeys.push(`${L('hk.' + name)} (${formatAccelerator(accel, settings.state.language)})`);
       console.warn(`Hotkey konnte nicht registriert werden: ${accel} (${name})`);
     }
   }
@@ -1719,7 +1959,7 @@ function openSettingsWindow() {
     maximizable: false,
     fullscreenable: false,
     backgroundColor: '#0b0806',
-    title: 'Einstellungen – YouTube Overlay',
+    title: L('main.settingsTitle'),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1746,15 +1986,17 @@ ipcMain.handle('hotkeys:get', (event) => {
   return {
     hotkeys: settings.hotkeys,
     defaults: DEFAULT_HOTKEYS,
-    labels: HOTKEY_LABELS,
+    labels: Object.fromEntries(Object.keys(HOTKEY_LABELS).map((n) => [n, L('hk.' + n)])),
     options: {
       adblock: settings.state.adblock !== false,
       theme: settings.state.theme,
       showBookmarks: settings.state.showBookmarks !== false,
       focusMode: settings.state.focusMode,
-      focusOpacity: settings.state.focusOpacity
+      focusOpacity: settings.state.focusOpacity,
+      language: settings.state.language
     },
-    themes: THEMES,
+    languages: LANGUAGES,
+    themes: THEMES.map((t) => ({ id: t.id, name: L('theme.' + t.id) })),
     failed: [...failedHotkeyNames],
     version: CURRENT_VERSION,
     update: updateInfo()
@@ -1770,6 +2012,10 @@ ipcMain.handle('hotkeys:save', (event, map, options) => {
   if (!isFromSettings(event)) return { ok: false, failed: [] };
   if (options && typeof options.adblock === 'boolean' && options.adblock !== (settings.state.adblock !== false)) {
     setAdblock(options.adblock);
+  }
+  if (options && LANG_IDS.has(options.language) && options.language !== settings.state.language) {
+    settings.state.language = options.language;
+    sendState();          // Leiste + Tray in neuer Sprache
   }
   if (options && Number.isFinite(Number(options.focusOpacity))) setFocusOpacity(options.focusOpacity);
   if (options && typeof options.focusMode === 'boolean' && options.focusMode !== settings.state.focusMode) {
@@ -1834,6 +2080,12 @@ ipcMain.on('bookmark:move', (e, id, toIndex) => { if (fromBar(e)) moveBookmark(S
 ipcMain.on('tab:new', (e) => { if (fromBar(e)) { createTab(START_PAGE, true); focusAddressBar(); } });
 ipcMain.on('tab:activate', (e, id) => { if (fromBar(e)) activateTab(id === 'yt' ? 'yt' : Number(id)); });
 ipcMain.on('tab:close', (e, id) => { if (fromBar(e)) closeTab(Number(id)); });
+ipcMain.on('split:toggle', (e) => { if (fromBar(e)) setSplit(!split.on); });
+ipcMain.on('twitch:toggle', (e) => { if (fromBar(e)) { if (twitchActive()) stopTwitch(); else startTwitch(); } });
+ipcMain.on('twitch:open', (e, channel) => { if (fromBar(e)) startTwitch(String(channel || '')); });
+ipcMain.on('split:drag-start', (e) => { if (fromBar(e)) startSplitDrag(); });
+ipcMain.on('split:drag-end', (e) => { if (fromBar(e)) endSplitDrag(); });
+ipcMain.on('split:reset', (e) => { if (fromBar(e)) setSplitRatio(0.5); });
 ipcMain.on('set-opacity', (_e, value) => {
   const v = Number(value);
   if (Number.isFinite(v)) setOpacity(v);

@@ -11,10 +11,21 @@ const KEY_NAMES_DE = {
   numadd: 'Num +', numsub: 'Num -', nummult: 'Num *', numdiv: 'Num /', numdec: 'Num ,'
 };
 
-// "Control+Alt+PageUp" -> "Strg + Alt + Bild↑"
-function formatAccelerator(accel) {
+const KEY_NAMES_EN = {
+  Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift', Super: 'Win',
+  PageUp: 'PgUp', PageDown: 'PgDn', Up: '↑', Down: '↓', Left: '←', Right: '→',
+  Space: 'Space', Return: 'Enter', Tab: 'Tab', Backspace: 'Backspace',
+  Delete: 'Del', Insert: 'Ins', Home: 'Home', End: 'End', Plus: '+',
+  num0: 'Num 0', num1: 'Num 1', num2: 'Num 2', num3: 'Num 3', num4: 'Num 4',
+  num5: 'Num 5', num6: 'Num 6', num7: 'Num 7', num8: 'Num 8', num9: 'Num 9',
+  numadd: 'Num +', numsub: 'Num -', nummult: 'Num *', numdiv: 'Num /', numdec: 'Num .'
+};
+
+// "Control+Alt+PageUp" -> "Strg + Alt + Bild↑" (de) bzw. "Ctrl + Alt + PgUp" (en)
+function formatAccelerator(accel, lang) {
   if (!accel) return '–';
-  return accel.split('+').map((k) => KEY_NAMES_DE[k] || k).join(' + ');
+  const names = lang === 'en' ? KEY_NAMES_EN : KEY_NAMES_DE;
+  return accel.split('+').map((k) => names[k] || k).join(' + ');
 }
 
 // Windows-Tastencode (KeyboardEvent.keyCode) -> Electron-Tastenname.

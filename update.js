@@ -87,7 +87,7 @@ class Updater {
       const res = await fetchWithTimeout(API_URL, {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'wow-overlay-browser-updater' }
       });
-      if (!res.ok) throw new Error(`GitHub antwortet mit ${res.status}`);
+      if (!res.ok) throw new Error(`http:${res.status}`);
       const rel = await res.json();
       const asset = (rel.assets || []).find((a) => /\.exe$/i.test(a.name));
       const latest = String(rel.tag_name || '').replace(/^v/i, '');
@@ -104,7 +104,7 @@ class Updater {
         this.set({ status: 'none', latest: latest || CURRENT_VERSION });
       }
     } catch (err) {
-      this.set({ status: 'error', error: err && err.name === 'AbortError' ? 'Zeitüberschreitung' : String(err && err.message || err) });
+      this.set({ status: 'error', error: err && err.name === 'AbortError' ? 'timeout' : String(err && err.message || err) });
     }
     return this.state;
   }
@@ -120,7 +120,7 @@ class Updater {
       const part = target + '.part';
       try {
         const res = await fetchWithTimeout(this.release.url, { headers: { 'User-Agent': 'wow-overlay-browser-updater' } }, 10 * 60 * 1000);
-        if (!res.ok || !res.body) throw new Error(`Download fehlgeschlagen (${res.status})`);
+        if (!res.ok || !res.body) throw new Error(`download:${res.status}`);
         const total = Number(res.headers.get('content-length')) || this.release.size || 0;
         const out = fs.createWriteStream(part);
         const reader = res.body.getReader();
@@ -136,7 +136,7 @@ class Updater {
         }
         await new Promise((resolve, reject) => out.end((e) => (e ? reject(e) : resolve())));
         if (this.release.size && fs.statSync(part).size !== this.release.size) {
-          throw new Error('Download unvollständig');
+          throw new Error('incomplete');
         }
         fs.renameSync(part, target);
         this.downloadPath = target;
@@ -147,7 +147,7 @@ class Updater {
         try { fs.unlinkSync(part); } catch (_) { /* nichts */ }
       }
     }
-    this.set({ status: 'error', error: String(lastErr && lastErr.message || lastErr) });
+    this.set({ status: 'error', error: lastErr && lastErr.name === 'AbortError' ? 'timeout' : String(lastErr && lastErr.message || lastErr) });
   }
 
   // Startet die neue .exe mit dem Auftrag, die alte zu ersetzen, und beendet diese App.

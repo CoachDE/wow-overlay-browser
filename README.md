@@ -1,8 +1,10 @@
 # WoW Overlay Browser
 
+> 🇬🇧 **English:** A borderless YouTube window with a built-in browser that **always stays on top of World of Warcraft** – watch videos, Shorts and Twitch streams, read guides side by side, all without alt-tabbing. Ad blocker, tabs, split view, Twitch mode, mini bar, click-through, focus mode, custom hotkeys, 6 designs and automatic updates. **[Download the latest version](https://github.com/CoachDE/wow-overlay-browser/releases/latest)** (`YouTube-Overlay.exe`, Windows 10/11). The language switches automatically to English if Windows is not German, or manually in ✱ Settings → General → Language.
+
 Ein randloses YouTube-Fenster mit eingebautem Browser, das **immer über World of Warcraft liegt**. Du kannst Videos und Shorts schauen, Guides lesen und beliebige Websites öffnen, während du spielst, und alles per Maus oder Hotkey steuern, **ohne aus WoW rauszutabben**.
 
-Mit Werbeblocker, Browser-Tabs, Mini-Leiste, Durchklick-Modus, frei belegbaren Hotkeys und 6 Designs.
+Mit Werbeblocker, Browser-Tabs, geteilter Ansicht, Twitch-Modus, Mini-Leiste, Durchklick-Modus, Fokus-Modus, frei belegbaren Hotkeys, 6 Designs und Deutsch/Englisch.
 
 ## ⬇ Download
 
@@ -59,6 +61,12 @@ Beim ersten Start fragt YouTube nach der Cookie-Zustimmung. Das musst du nur ein
 - **Downloads** landen direkt im Windows-Ordner *Downloads*, die Leiste zeigt kurz an, wenn sie fertig sind.
 - Sicherheit: Websites bekommen **keinen** Zugriff auf Kamera, Mikrofon, Standort oder Benachrichtigungen.
 
+**Geteilte Ansicht** (◫-Knopf oder `Strg+Alt+S`): zwei Seiten nebeneinander im Overlay – links YouTube, rechts der zuletzt benutzte Browser-Tab (z. B. ein Guide). Ein Klick auf einen anderen Tab wechselt die rechte Seite. Den **Trennbalken** mit der Maus ziehen, um die Aufteilung zu ändern (Doppelklick = 50 : 50). In der Tab-Leiste zeigen ◧ und ◨, welche Tabs gerade zu sehen sind.
+
+**Twitch-Modus** (lila Knopf): Stream als reiner Player links, **Chat** rechts. Auf einer Twitch-Kanalseite einfach den Knopf klicken – oder den Knopf drücken und im Adressfeld den Kanalnamen eingeben. Nochmal klicken beendet den Twitch-Modus. Beim ersten Mal fragt Twitch einmalig nach Cookies; der Twitch-Login bleibt gespeichert.
+
+**Sprache**: Deutsch oder Englisch unter ✱ → Allgemein → Sprache. Beim ersten Start richtet sie sich nach der Windows-Sprache.
+
 **Lesezeichen** (Leiste unter den Tabs):
 
 - **☆** rechts neben dem Adressfeld (oder `Strg+D`) speichert die aktuelle Seite – YouTube-Video oder Website. Der Stern ploppt auf, fliegt in die Leiste, und das neue Lesezeichen leuchtet golden auf. Nochmal klicken (★) entfernt es wieder (es verblasst).
@@ -91,6 +99,7 @@ Die Hotkeys funktionieren auch, während du in WoW bist. Ändern geht über den 
 | `Strg+Alt+G` | Maximieren / Normalgröße |
 | `Strg+Alt+H` | Mini-Leiste / Wiederherstellen |
 | `Strg+Alt+T` | Fokus-Modus an/aus |
+| `Strg+Alt+S` | Geteilte Ansicht an/aus |
 | `Strg+Alt+K` | Play / Pause |
 | `Strg+Alt+J` / `Strg+Alt+L` | 10 Sekunden zurück / vor |
 | `Strg+Alt+N` | Ton an/aus |

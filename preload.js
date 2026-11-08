@@ -13,6 +13,15 @@ contextBridge.exposeInMainWorld('overlay', {
   toggleClickThrough: () => send('toggle-click-through'),
   toggleBar: () => send('toggle-bar'),
   toggleFocus: () => send('toggle-focus'),
+  toggleSplit: () => send('split:toggle'),
+  toggleTwitch: () => send('twitch:toggle'),
+  openTwitch: (channel) => send('twitch:open', String(channel)),
+  onTwitchPrompt: (callback) => {
+    ipcRenderer.on('twitch-prompt', () => callback());
+  },
+  splitDragStart: () => send('split:drag-start'),
+  splitDragEnd: () => send('split:drag-end'),
+  splitReset: () => send('split:reset'),
   cinema: () => send('cinema'),
   minimize: () => send('minimize'),
   toggleMaximize: () => send('toggle-maximize'),
