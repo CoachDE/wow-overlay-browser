@@ -89,7 +89,7 @@ function renderUpdate(u) {
   b.hidden = !show;
   if (!show) return;
   b.classList.toggle('busy', u.status === 'downloading');
-  b.classList.toggle('error', u.status === 'error');
+  b.classList.toggle('error', u.status === 'error' || (u.status === 'ready' && !!u.mandatory));
   b.disabled = u.status === 'downloading';
   if (u.status === 'available') {
     b.textContent = `⬆ Update ${u.latest}`;
@@ -97,11 +97,14 @@ function renderUpdate(u) {
       ? `Version ${u.latest} herunterladen (du hast ${u.current})`
       : `Version ${u.latest} ist verfügbar – öffnet die Download-Seite`;
   } else if (u.status === 'downloading') {
-    b.textContent = `⬇ ${u.progress || 0} %`;
-    b.title = `Version ${u.latest} wird heruntergeladen …`;
+    b.textContent = `⬇ ${u.mandatory ? 'Pflicht-Update ' : 'Update '}${u.progress || 0} %`;
+    b.title = `Version ${u.latest} wird im Hintergrund heruntergeladen …`;
+  } else if (u.status === 'ready' && u.mandatory) {
+    b.textContent = u.countdown ? `↻ Pflicht-Update – Neustart in ${u.countdown} s` : '↻ Pflicht-Update – jetzt neu starten';
+    b.title = `Pflicht-Update auf ${u.latest}. Klick: sofort neu starten`;
   } else if (u.status === 'ready') {
     b.textContent = '↻ Neu starten';
-    b.title = `Version ${u.latest} installieren – das Overlay startet kurz neu`;
+    b.title = `Version ${u.latest} ist bereit. Klick: jetzt installieren – sonst automatisch beim Beenden`;
   } else {
     b.textContent = '⚠ Update fehlgeschlagen';
     b.title = `${u.error || 'Fehler'} – Klick: erneut versuchen`;

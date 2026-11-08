@@ -9,7 +9,8 @@ Mit Werbeblocker, Browser-Tabs, Mini-Leiste, Durchklick-Modus, frei belegbaren H
 **[Neueste Version herunterladen](https://github.com/CoachDE/wow-overlay-browser/releases/latest)** → dort unter *Assets* die Datei **`YouTube-Overlay.exe`** anklicken.
 
 - Keine Installation nötig: Die .exe einfach speichern (z. B. auf dem Desktop) und per Doppelklick starten.
-- **Updates kommen automatisch** (ab Version 1.2.1): Gibt es eine neue Version, erscheint in der Tab-Leiste **„⬆ Update“**. Ein Klick lädt sie herunter, **„↻ Neu starten“** installiert sie. Die .exe wird dabei an Ort und Stelle ersetzt, Verknüpfungen bleiben gültig. Manuell: Tray-Symbol → *Nach Updates suchen*.
+- **Updates kommen automatisch** (ab Version 1.4.0): Neue Versionen werden im Hintergrund heruntergeladen und **beim Beenden des Overlays installiert** – beim nächsten Start ist die neue Version da. Sofort geht es mit **„↻ Neu starten“** in der Tab-Leiste. Die .exe wird an Ort und Stelle ersetzt, Verknüpfungen bleiben gültig. Manuell suchen: Tray-Symbol → *Nach Updates suchen*.
+- Bei einem **Pflicht-Update** erscheint eine Windows-Benachrichtigung und ein roter Knopf mit Countdown; nach 60 Sekunden startet das Overlay kurz neu in der neuen Version.
 - Nur für **Windows 10/11 (64 Bit)**.
 - Einstellungen werden unter `%APPDATA%\YouTube Overlay` gespeichert.
 
@@ -133,6 +134,8 @@ Releases baut GitHub automatisch (siehe `.github/workflows/release.yml`):
    git push origin main v1.2.0
    ```
 3. Nach ein paar Minuten steht die neue `YouTube-Overlay.exe` unter *Releases*.
+
+**Pflicht-Update:** Vor dem Tag in `.github/min-version.txt` die neue Versionsnummer eintragen (z. B. `1.5.0`) und mit committen. Alle Apps, die älter sind, laden die Version dann sofort herunter und starten nach 60 Sekunden neu. Die Mindestversion gilt auch für spätere normale Versionen weiter, bis sie wieder erhöht wird.
 
 ## Hinweise
 

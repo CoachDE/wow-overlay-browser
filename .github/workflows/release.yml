@@ -33,10 +33,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          # Mindestversion (Pflicht-Update): Ältere Apps müssen auf diese Version aktualisieren.
+          MIN_VERSION="$(tr -d ' \r\n' < .github/min-version.txt)"
+          cp .github/release-notes.md notes.md
+          printf '\n<!-- min-version: %s -->\n' "$MIN_VERSION" >> notes.md
+          if [ "$MIN_VERSION" = "$VERSION" ]; then
+            printf '\n> ⚠ **Pflicht-Update:** Ältere Versionen werden automatisch auf diese Version aktualisiert.\n' >> notes.md
+          fi
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/YouTube-Overlay.exe --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/YouTube-Overlay.exe \
               --title "WoW Overlay Browser $VERSION" \
-              --notes-file .github/release-notes.md
+              --notes-file notes.md
           fi

@@ -5,18 +5,19 @@ const path = require('path');
 const fs = require('fs');
 const { formatAccelerator } = require('./keys.js');
 const { YouTubeAdblock } = require('./adblock.js');
-const { Updater, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG } = require('./update.js');
+const { Updater, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG } = require('./update.js');
 
 // Update abschließen: Diese (neue) Version wurde von der alten mit "--finish-update" gestartet.
 // Sie ersetzt die alte .exe, startet sie neu und beendet sich – sonst passiert hier nichts.
 const finishIdx = process.argv.indexOf(FINISH_FLAG);
 if (finishIdx !== -1) {
-  finishUpdate(app, process.argv[finishIdx + 1], Number(process.argv[finishIdx + 2]));
+  finishUpdate(app, process.argv[finishIdx + 1], Number(process.argv[finishIdx + 2]), !process.argv.includes(NO_LAUNCH_FLAG));
   return;
 }
 
 const UPDATE_CHECK_DELAY = 8000;                  // erste Prüfung kurz nach dem Start
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // danach alle 6 Stunden
+const MANDATORY_RESTART_SECONDS = 60;             // Pflicht-Update: Neustart nach dieser Zeit
 
 const ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -280,6 +281,8 @@ let adblock = null;
 let updater = null;
 let updateAnnounced = null;   // Version, für die der Hinweis schon gezeigt wurde
 let manualUpdateCheck = false;
+let mandatoryTimer = null;    // Countdown bis zum automatischen Neustart (Pflicht-Update)
+let mandatoryLeft = 0;
 let tabs = [];                // Browser-Tabs: { id, view, title, favicon, loading, pendingUrl }
 let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-Tabs
 let nextTabId = 1;
@@ -599,7 +602,7 @@ function sendState(extra = {}) {
     ytTitle: ytView ? ytView.webContents.getTitle().replace(/\s*-\s*YouTube\s*$/, '') : '',
     adblock: settings.state.adblock !== false,
     adblockStatus: adblock ? adblock.status : 'laedt',
-    update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
+    update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe, countdown: mandatoryTimer ? mandatoryLeft : 0 } : null,
     version: CURRENT_VERSION,
     bookmarks: settings.state.bookmarks,
     showBookmarks: bookmarksShown(),
@@ -1336,6 +1339,23 @@ function setupUpdater() {
 
 function onUpdateState(st) {
   let notice;
+  // Neue Version: in der fertigen .exe sofort im Hintergrund herunterladen
+  if (st.status === 'available' && updater.portableExe) {
+    if (updateAnnounced !== st.latest) {
+      updateAnnounced = st.latest;
+      notice = st.mandatory
+        ? `Pflicht-Update auf ${st.latest} wird heruntergeladen …`
+        : `Neue Version ${st.latest} wird im Hintergrund heruntergeladen …`;
+    }
+    manualUpdateCheck = false;
+    setImmediate(() => updater.download(app.getPath('downloads')));
+    sendState(notice ? { notice } : {});
+    return;
+  }
+  if (st.status === 'ready' && st.mandatory) {
+    startMandatoryCountdown(st.latest);
+    return;
+  }
   if (st.status === 'available' && updateAnnounced !== st.latest) {
     updateAnnounced = st.latest;
     notice = `Neue Version ${st.latest} verfügbar – Klick auf „⬆ Update“ in der Tab-Leiste`;
@@ -1348,9 +1368,34 @@ function onUpdateState(st) {
     manualUpdateCheck = false;
     notice = `Update-Prüfung fehlgeschlagen: ${st.error}`;
   } else if (st.status === 'ready') {
-    notice = 'Update heruntergeladen – Klick auf „↻ Neu starten“ in der Tab-Leiste';
+    notice = `Version ${st.latest} ist bereit – wird beim Beenden installiert (sofort: „↻ Neu starten“)`;
   }
   sendState(notice ? { notice } : {});
+}
+
+// Pflicht-Update: Hinweis + Countdown, danach automatischer Neustart in der neuen Version
+function startMandatoryCountdown(version) {
+  if (mandatoryTimer) return;
+  mandatoryLeft = MANDATORY_RESTART_SECONDS;
+  try {
+    if (tray && !tray.isDestroyed()) {
+      tray.displayBalloon({
+        iconType: 'info',
+        title: 'Pflicht-Update für das YouTube Overlay',
+        content: `Version ${version} ist bereit. Das Overlay startet in ${MANDATORY_RESTART_SECONDS} Sekunden kurz neu.`
+      });
+    }
+  } catch (_) { /* Benachrichtigung ist optional */ }
+  sendState({ notice: `Pflicht-Update ${version}: Das Overlay startet in ${MANDATORY_RESTART_SECONDS} s neu („Jetzt“ in der Tab-Leiste).` });
+  mandatoryTimer = setInterval(() => {
+    mandatoryLeft -= 1;
+    if (mandatoryLeft <= 0) {
+      clearInterval(mandatoryTimer);
+      updateAction();
+    } else {
+      sendState();
+    }
+  }, 1000);
 }
 
 function checkForUpdatesManually() {
@@ -1660,6 +1705,9 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  if (updater && updater.state.status === 'ready') {
+    updater.restart(() => {}, { launch: false });
+  }
   if (win) rememberBounds();
   saveSettingsNow();
 });

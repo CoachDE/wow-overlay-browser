@@ -17,6 +17,7 @@ const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const CURRENT_VERSION = require('./package.json').version;
 const FINISH_FLAG = '--finish-update';
+const NO_LAUNCH_FLAG = '--no-launch';   // Update nur installieren, App nicht starten (beim Beenden)
 const DOWNLOAD_NAME = /^YouTube-Overlay-\d+\.\d+\.\d+\.exe$/i;
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -90,9 +91,14 @@ class Updater {
       const rel = await res.json();
       const asset = (rel.assets || []).find((a) => /\.exe$/i.test(a.name));
       const latest = String(rel.tag_name || '').replace(/^v/i, '');
+      // Pflicht-Update: Die Release-Beschreibung enthält "<!-- min-version: X.Y.Z -->".
+      // Ist die laufende Version älter als X.Y.Z, muss aktualisiert werden.
+      const m = String(rel.body || '').match(/min-version:\s*v?(\d+\.\d+\.\d+)/i);
+      const minVersion = m ? m[1] : null;
+      const mandatory = !!(minVersion && isNewer(minVersion, CURRENT_VERSION));
       if (asset && isNewer(latest, CURRENT_VERSION)) {
         this.release = { version: latest, url: asset.browser_download_url, size: asset.size, page: rel.html_url || RELEASES_PAGE };
-        this.set({ status: 'available', latest, progress: 0 });
+        this.set({ status: 'available', latest, progress: 0, mandatory });
       } else {
         this.release = null;
         this.set({ status: 'none', latest: latest || CURRENT_VERSION });
@@ -146,10 +152,14 @@ class Updater {
 
   // Startet die neue .exe mit dem Auftrag, die alte zu ersetzen, und beendet diese App.
   // Gibt false zurück, wenn das nicht möglich ist (dann z. B. die Download-Seite öffnen).
-  restart(quit) {
-    if (this.state.status !== 'ready' || !this.downloadPath || !this.portableExe) return false;
+  // launch=false: nur installieren (beim normalen Beenden), die App danach nicht starten.
+  restart(quit, { launch = true } = {}) {
+    if (this.installing || this.state.status !== 'ready' || !this.downloadPath || !this.portableExe) return false;
+    this.installing = true;
     // Gewartet wird auf den Start-Prozess der Einzel-.exe – er hält die alte Datei bis zum Ende geöffnet.
-    startDetached(this.downloadPath, [FINISH_FLAG, this.portableExe, String(process.ppid)]);
+    const args = [FINISH_FLAG, this.portableExe, String(process.ppid)];
+    if (!launch) args.push(NO_LAUNCH_FLAG);
+    startDetached(this.downloadPath, args);
     quit();
     return true;
   }
@@ -157,7 +167,7 @@ class Updater {
 
 // Läuft in der NEUEN Version, wenn sie mit "--finish-update <alte.exe> <pid>" gestartet wurde.
 // Zeigt kein Fenster. Ergebnis: alte .exe enthält die neue Version und ist gestartet.
-function finishUpdate(app, oldExe, waitPid) {
+function finishUpdate(app, oldExe, waitPid, launch = true) {
   const self = process.env.PORTABLE_EXECUTABLE_FILE;
   app.whenReady().then(async () => {
     try {
@@ -172,9 +182,9 @@ function finishUpdate(app, oldExe, waitPid) {
           await wait(500); // alte Datei evtl. noch kurz gesperrt
         }
       }
-      startDetached(copied ? oldExe : self);
+      if (launch) startDetached(copied ? oldExe : self);
     } catch (_) {
-      if (self) startDetached(self);
+      if (self && launch) startDetached(self);
     }
     app.exit(0);
   });
@@ -205,4 +215,4 @@ function cleanupDownloads(extraDirs, isBusy) {
   setTimeout(run, 60000);
 }
 
-module.exports = { Updater, isNewer, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG };
+module.exports = { Updater, isNewer, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG };
