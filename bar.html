@@ -206,7 +206,14 @@
       -webkit-app-region: no-drag;
     }
     /* Schmale Fenster (z. B. Shorts hochkant): Unwichtiges ausblenden */
-    @media (max-width: 520px) { .opacity, #btnHome, #btnReload, .sep { display: none; } }
+    @media (max-width: 820px) { #volumeValue { display: none; } #volume, input#opacity { width: 52px; } }
+    @media (max-width: 700px) { .opacity, #btnReload { display: none; } }
+    @media (max-width: 520px) { .opacity, #btnHome, #btnReload, .sep, #volume, #volumeValue { display: none; } }
+    /* Lautstärke */
+    .volume { display: flex; align-items: center; gap: 4px; flex: none; margin: 0 2px; }
+    #volume { width: 64px; }
+    #volumeValue { width: 22px; font-size: 10px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+    #btnVol.muted, #miniVol.muted { color: var(--danger-light); }
     @media (max-width: 400px) { #btnBack, .emblem { display: none; } }
     /* Dauerhafter Hinweis im Durchklick-Modus (Leiste ist dann nicht klickbar) */
     #status.sticky { background: linear-gradient(180deg, var(--status-1), var(--status-2)); border-color: var(--danger-light); left: 6px; text-align: center; }
@@ -236,6 +243,13 @@
     <div class="opacity" title="Deckkraft">
       <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor"/></svg>
       <input id="opacity" type="range" min="20" max="100" step="5">
+    </div>
+    <div class="volume" id="volumeBox">
+      <button id="btnVol" title="Stumm an/aus">
+        <svg viewBox="0 0 16 16"><path class="vol-icon" d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5Z"/></svg>
+      </button>
+      <input id="volume" type="range" min="0" max="100" step="1" title="YouTube-Lautstärke">
+      <span id="volumeValue">100</span>
     </div>
     <div class="sep"></div>
     <button id="btnShorts" title="YouTube Shorts (Fenster wird hochkant)">
@@ -276,6 +290,9 @@
       <svg viewBox="0 0 16 16"><path id="miniPlayIcon" d="M5 3.5v9l7-4.5Z"/></svg>
     </button>
     <div id="miniTitle">YouTube</div>
+    <button id="miniVol" title="Stumm an/aus – Mausrad: Lautstärke">
+      <svg viewBox="0 0 16 16"><path class="vol-icon" d="M2.5 6h2.5l3.5-3v10l-3.5-3H2.5Z"/></svg>
+    </button>
     <button id="miniRestore" title="Wiederherstellen">
       <svg viewBox="0 0 16 16"><path d="M3.5 3.5h9v9h-9ZM3.5 6h9"/></svg>
     </button>

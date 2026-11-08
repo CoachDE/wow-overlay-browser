@@ -33,6 +33,35 @@ $('miniClose').addEventListener('click', () => api.close());
 $('btnClose').addEventListener('click', () => api.close());
 
 opacity.addEventListener('input', () => api.setOpacity(Number(opacity.value) / 100));
+
+// ---------- Lautstärke ----------
+const volume = $('volume');
+let volumeDragging = false;
+let currentVolume = 100;
+volume.addEventListener('input', () => {
+  volumeDragging = true;
+  currentVolume = Number(volume.value);
+  $('volumeValue').textContent = currentVolume;
+  api.setVolume(currentVolume);
+});
+volume.addEventListener('change', () => { volumeDragging = false; });
+$('btnVol').addEventListener('click', () => api.toggleMute());
+$('miniVol').addEventListener('click', () => api.toggleMute());
+// Mausrad über Regler/Lautsprecher: 5 % pro Raster
+for (const el of [$('volumeBox'), $('miniVol')]) {
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    currentVolume = Math.max(0, Math.min(100, currentVolume + (e.deltaY < 0 ? 5 : -5)));
+    api.setVolume(currentVolume);
+  }, { passive: false });
+}
+
+function volumeIconPath(vol, muted) {
+  const speaker = 'M2.5 6h2.5l3.5-3v10l-3.5-3H2.5Z';
+  if (muted || vol === 0) return speaker + 'M10.5 6l3.5 4M14 6l-3.5 4';
+  if (vol < 50) return speaker + 'M10.8 6a2.6 2.6 0 0 1 0 4';
+  return speaker + 'M10.8 6a2.6 2.6 0 0 1 0 4M12.6 4.2a5.2 5.2 0 0 1 0 7.6';
+}
 status.addEventListener('click', () => { status.style.display = 'none'; });
 
 function showStatus(text, ms) {
@@ -145,6 +174,19 @@ api.onState((state) => {
   } else {
     $('btnBar').title = `Leiste dauerhaft anzeigen (${hk(state, 'toggleBar')})`;
     $('barIcon').setAttribute('d', 'M3.5 6 8 10.5 12.5 6');
+  }
+
+  // Lautstärke
+  if (typeof state.volume === 'number') {
+    currentVolume = state.volume;
+    if (!volumeDragging) volume.value = state.volume;
+    $('volumeValue').textContent = state.muted ? 'aus' : state.volume;
+    const d = volumeIconPath(state.volume, state.muted);
+    document.querySelectorAll('.vol-icon').forEach((p) => p.setAttribute('d', d));
+    for (const id of ['btnVol', 'miniVol']) {
+      $(id).classList.toggle('muted', !!state.muted);
+      $(id).title = `${state.muted ? 'Ton an' : 'Stumm'} (${hk(state, 'mute')}) – Lautstärke ${state.volume} %, Mausrad oder ${hk(state, 'volumeUp')} / ${hk(state, 'volumeDown')}`;
+    }
   }
 
   // Mini-Leiste

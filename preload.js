@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('overlay', {
   minimize: () => send('minimize'),
   toggleMaximize: () => send('toggle-maximize'),
   playPause: () => send('play-pause'),
+  setVolume: (value) => send('set-volume', Number(value)),
+  toggleMute: () => send('toggle-mute'),
   hide: () => send('hide'),
   close: () => send('close'),
   openSettings: () => send('open-settings'),

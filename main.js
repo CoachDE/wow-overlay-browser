@@ -17,6 +17,7 @@ const MIN_OPACITY = 0.2;
 const MAX_OPACITY = 1.0;
 const OPACITY_STEP = 0.1;
 const SEEK_SECONDS = 10;
+const VOLUME_STEP = 10;      // Lautstärke-Schritt für die Hotkeys (Prozent)
 const HOME_URL = 'https://www.youtube.com/';
 const SHORTS_URL = 'https://www.youtube.com/shorts';
 const PEEK_ZONE = 12;        // Pixel am oberen Rand, die die ausgeblendete Leiste wieder aufklappen
@@ -53,6 +54,8 @@ const DEFAULT_HOTKEYS = {
   seekBack: 'Control+Alt+J',
   seekForward: 'Control+Alt+L',
   mute: 'Control+Alt+N',
+  volumeUp: 'Control+Alt+.',
+  volumeDown: 'Control+Alt+,',
   clickThrough: 'Control+Alt+D',
   toggleBar: 'Control+Alt+B',
   cinema: 'Control+Alt+F',
@@ -72,6 +75,8 @@ const HOTKEY_LABELS = {
   seekBack: '10 Sekunden zurück',
   seekForward: '10 Sekunden vor',
   mute: 'Ton an/aus',
+  volumeUp: 'Lauter',
+  volumeDown: 'Leiser',
   shortsNext: 'Nächstes Short',
   shortsPrev: 'Vorheriges Short',
   cinema: 'Kino-Modus',
@@ -88,6 +93,7 @@ const DEFAULT_STATE = {
   barVisible: true,
   adblock: true,           // Werbeblocker an/aus
   theme: 'gold',           // Design
+  volume: null,            // YouTube-Lautstärke 0–100 (null = noch nie eingestellt)
   tabs: [],                // offene Browser-Tabs (Adressen), werden beim Start wiederhergestellt
   lastUrl: HOME_URL
 };
@@ -244,6 +250,13 @@ let nextTabId = 1;
 let previewTheme = null;      // Design-Vorschau, solange die Einstellungen offen sind
 let miniMode = false;         // Overlay ist zur Mini-Leiste verkleinert
 let ytPlaying = false;
+let ytMuted = false;
+let volumeSetAt = 0;          // Zeitpunkt der letzten eigenen Lautstärke-Änderung
+let volumeVideoId = null;     // Video, auf das die Lautstärke zuletzt angewendet wurde
+let lastAppliedVolume = null; // zuletzt an den Player gegebener Wert
+let syncVideoId = null;       // Video, das der Abgleich zuletzt gesehen hat
+let syncVideoAt = 0;
+let volumeTimer = null;
 let barPeek = false;          // Leiste ist ausgeblendet, aber wegen der Maus kurz aufgeklappt
 let peekLeftAt = 0;
 let peekTimer = null;
@@ -306,7 +319,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      backgroundThrottling: false     // Video + Werbe-Skipper laufen weiter, wenn ein anderer Tab offen ist
+      backgroundThrottling: false,    // Video + Werbe-Skipper laufen weiter, wenn ein anderer Tab offen ist
+      preload: path.join(__dirname, 'yt-preload.js') // meldet YouTube "Vollbild verfügbar"
     }
   });
   ytView.setBackgroundColor('#0f0f0f');
@@ -335,7 +349,11 @@ function createWindow() {
     }
   });
   attachCommonHandlers(yt);
-  yt.on('media-started-playing', () => { ytPlaying = true; sendState(); });
+  yt.on('media-started-playing', () => {
+    ytPlaying = true;
+    onVideoMaybeChanged();
+    sendState();
+  });
   yt.on('media-paused', () => { ytPlaying = false; sendState(); });
   yt.on('page-title-updated', () => sendState());
 
@@ -346,8 +364,11 @@ function createWindow() {
       saveSettingsSoon();
     }
     if (activeTab === 'yt') applyShortsMode(isShortsUrl(url));
+    onVideoMaybeChanged();
     sendState();
   };
+  // Seite komplett neu geladen = neuer Player -> Lautstärke auch für dasselbe Video neu setzen
+  yt.on('did-navigate', () => { volumeVideoId = null; });
   yt.on('did-navigate', onUrlChange);
   yt.on('did-navigate-in-page', onUrlChange);
 
@@ -382,12 +403,14 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => sendState());
 
   peekTimer = setInterval(checkBarPeek, 100);
+  volumeTimer = setInterval(syncVolumeFromPlayer, 1500);
 
   win.on('show', updateTray);
   win.on('hide', updateTray);
 
   win.on('closed', () => {
     clearInterval(peekTimer);
+    clearInterval(volumeTimer);
     win = null;
     ytView = null;
   });
@@ -526,6 +549,8 @@ function sendState(extra = {}) {
     miniMode,
     theme: previewTheme || settings.state.theme,
     ytPlaying,
+    volume: Number.isFinite(settings.state.volume) ? settings.state.volume : 100,
+    muted: ytMuted,
     ytTitle: ytView ? ytView.webContents.getTitle().replace(/\s*-\s*YouTube\s*$/, '') : '',
     adblock: settings.state.adblock !== false,
     adblockStatus: adblock ? adblock.status : 'laedt',
@@ -624,6 +649,119 @@ function playerCommand(cmd) {
   })()`;
   // userGesture = true, damit Abspielen/Vollbild ohne echten Klick erlaubt ist
   ytView.webContents.executeJavaScript(js, true).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Lautstärke (YouTube-Player)
+// ---------------------------------------------------------------------------
+const PLAYER_JS = `const onShorts = location.pathname.startsWith('/shorts');
+    const p = document.getElementById(onShorts ? 'shorts-player' : 'movie_player');
+    const v = (p && p.querySelector('video')) || document.querySelector('video');
+    const has = (fn) => p && typeof p[fn] === 'function';`;
+
+// Neues Video (auch beim Wechsel ohne Neuladen der Seite): gespeicherte Lautstärke
+// anwenden. Zweimal, weil YouTube beim Start eines Videos die Lautstärke selbst noch anpasst.
+function onVideoMaybeChanged() {
+  const id = currentVideoId();
+  if (!id || id === volumeVideoId) return;
+  volumeVideoId = id;
+  syncVideoId = id;
+  syncVideoAt = Date.now();
+  if (!Number.isFinite(settings.state.volume)) return;
+  for (const delay of [800, 2500]) {
+    setTimeout(() => {
+      if (currentVideoId() === id) applyVolume(settings.state.volume, false);
+    }, delay);
+  }
+}
+
+// Video-ID bzw. Short-ID der aktuellen YouTube-Seite
+function currentVideoId() {
+  if (!ytView) return null;
+  try {
+    const u = new URL(ytView.webContents.getURL());
+    if (u.pathname.startsWith('/shorts/')) return 'short:' + u.pathname.split('/')[2];
+    return u.searchParams.get('v');
+  } catch (_) {
+    return null;
+  }
+}
+
+// Setzt die Lautstärke im Player. unmute=true hebt dabei eine Stummschaltung auf.
+function applyVolume(vol, unmute) {
+  if (!ytView) return;
+  lastAppliedVolume = Number(vol);
+  volumeSetAt = Date.now();
+  const js = `(() => {
+    ${PLAYER_JS}
+    const vol = ${Number(vol)};
+    if (has('setVolume')) {
+      p.setVolume(vol);
+      if (${unmute ? 'true' : 'false'} && vol > 0 && has('isMuted') && p.isMuted()) p.unMute();
+    } else if (v) {
+      v.volume = vol / 100;
+      if (${unmute ? 'true' : 'false'} && vol > 0) v.muted = false;
+    }
+    return true;
+  })()`;
+  ytView.webContents.executeJavaScript(js, true).catch(() => {});
+}
+
+function setVolume(value) {
+  const vol = Math.round(clamp(Number(value), 0, 100));
+  if (!Number.isFinite(vol)) return;
+  settings.state.volume = vol;
+  volumeSetAt = Date.now();
+  ytMuted = vol === 0 ? ytMuted : false;
+  applyVolume(vol, true);
+  saveSettingsSoon();
+  sendState();
+}
+
+function changeVolume(delta) {
+  const cur = Number.isFinite(settings.state.volume) ? settings.state.volume : 100;
+  setVolume(cur + delta);
+}
+
+// Liest Lautstärke/Stumm aus dem Player, damit der Regler zu YouTubes eigenem Regler passt.
+// Übernimmt nur echte Änderungen (nicht direkt nach dem eigenen Setzen) und wendet nichts
+// zurück an – so kann sich nichts gegenseitig hochschaukeln.
+function syncVolumeFromPlayer() {
+  if (!ytView || ytView.webContents.isDestroyed() || Date.now() - volumeSetAt < 3000) return;
+  const js = `(() => {
+    ${PLAYER_JS}
+    if (has('getVolume') && has('isMuted')) return { vol: p.getVolume(), muted: p.isMuted() };
+    if (v) return { vol: Math.round(v.volume * 100), muted: v.muted };
+    return null;
+  })()`;
+  ytView.webContents.executeJavaScript(js).then((r) => {
+    if (!r || !Number.isFinite(r.vol)) return;
+    if (Date.now() - volumeSetAt < 3000) return; // inzwischen selbst gesetzt
+    const vol = Math.round(r.vol);
+    let changed = false;
+    if (!!r.muted !== ytMuted) { ytMuted = !!r.muted; changed = true; }
+    // In den ersten Sekunden eines Videos passt YouTube die Lautstärke selbst an
+    // (Lautstärke-Ausgleich). Das nicht übernehmen, sonst summiert es sich von Video zu Video.
+    const id = currentVideoId();
+    if (id !== syncVideoId) { syncVideoId = id; syncVideoAt = Date.now(); }
+    if (Date.now() - syncVideoAt < 10000) {
+      lastAppliedVolume = vol;
+      if (changed) sendState();
+      return;
+    }
+    // Nur übernehmen, wenn jemand YouTubes eigenen Regler bewegt hat
+    if (lastAppliedVolume === null || Math.abs(vol - lastAppliedVolume) >= 1) {
+      if (vol !== settings.state.volume) {
+        settings.state.volume = vol;
+        changed = true;
+      }
+      lastAppliedVolume = vol;
+    }
+    if (changed) {
+      saveSettingsSoon();
+      sendState();
+    }
+  }).catch(() => {});
 }
 
 // Nächstes / vorheriges Short: klickt YouTubes eigene Pfeil-Knöpfe,
@@ -1054,12 +1192,14 @@ const hotkeyActions = {
   playPause: () => playerCommand('playPause'),
   seekBack: () => playerCommand('seekBack'),
   seekForward: () => playerCommand('seekForward'),
-  mute: () => playerCommand('mute'),
+  mute: () => { playerCommand('mute'); ytMuted = !ytMuted; volumeSetAt = Date.now(); sendState(); },
   clickThrough: () => setClickThrough(!clickThrough),
   toggleBar: () => setBarVisible(!settings.state.barVisible),
   cinema: () => playerCommand('cinema'),
   opacityUp: () => setOpacity(settings.state.opacity + OPACITY_STEP),
   opacityDown: () => setOpacity(settings.state.opacity - OPACITY_STEP),
+  volumeUp: () => changeVolume(VOLUME_STEP),
+  volumeDown: () => changeVolume(-VOLUME_STEP),
   shortsNext: () => shortsStep('next'),
   shortsPrev: () => shortsStep('prev')
 };
@@ -1238,6 +1378,14 @@ ipcMain.on('toggle-bar', () => setBarVisible(!settings.state.barVisible));
 ipcMain.on('cinema', () => { activateTab('yt'); playerCommand('cinema'); });
 ipcMain.on('minimize', (e) => { if (fromBar(e)) toggleMini(); });
 ipcMain.on('play-pause', (e) => { if (fromBar(e)) playerCommand('playPause'); });
+ipcMain.on('set-volume', (e, value) => { if (fromBar(e)) setVolume(value); });
+ipcMain.on('toggle-mute', (e) => {
+  if (!fromBar(e)) return;
+  playerCommand('mute');
+  ytMuted = !ytMuted;
+  volumeSetAt = Date.now();
+  sendState();
+});
 ipcMain.on('toggle-maximize', () => toggleMaximize());
 ipcMain.on('hide', () => toggleVisible());
 ipcMain.on('close', () => { if (win) win.close(); });
