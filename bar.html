@@ -98,6 +98,20 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     #btnNewTab { width: 24px; height: 22px; margin-bottom: 1px; }
     #tabs .fill { flex: 1; align-self: stretch; -webkit-app-region: drag; }
+    /* Update-Knopf rechts in der Tab-Leiste */
+    #btnUpdate {
+      width: auto; height: 20px; margin: 0 0 3px 6px; padding: 0 9px;
+      font: 11px var(--font); white-space: nowrap;
+      color: var(--primary-text);
+      background: linear-gradient(180deg, var(--gold-light), var(--gold) 60%, var(--gold-dark));
+      border-color: var(--gold-light);
+      box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 60%, transparent);
+      animation: updatePulse 2.4s ease-in-out infinite;
+    }
+    #btnUpdate[hidden] { display: none; }
+    #btnUpdate.busy { animation: none; cursor: default; background: var(--btn-2); color: var(--gold-light); }
+    #btnUpdate.error { animation: none; background: linear-gradient(180deg, var(--danger-light), var(--danger)); color: var(--on-color); border-color: var(--danger-light); }
+    @keyframes updatePulse { 50% { box-shadow: 0 0 2px color-mix(in srgb, var(--gold) 30%, transparent); } }
     /* Schmale Fenster: nur Symbole in den Tabs */
     @media (max-width: 400px) { .tab .title { display: none; } .tab { flex: 0 0 auto; } }
 
@@ -306,6 +320,7 @@
       <svg viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></svg>
     </button>
     <div class="fill"></div>
+    <button id="btnUpdate" hidden></button>
   </div>
   <div id="status"></div>
   <script src="keys.js"></script>

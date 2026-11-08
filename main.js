@@ -5,6 +5,18 @@ const path = require('path');
 const fs = require('fs');
 const { formatAccelerator } = require('./keys.js');
 const { YouTubeAdblock } = require('./adblock.js');
+const { Updater, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG } = require('./update.js');
+
+// Update abschließen: Diese (neue) Version wurde von der alten mit "--finish-update" gestartet.
+// Sie ersetzt die alte .exe, startet sie neu und beendet sich – sonst passiert hier nichts.
+const finishIdx = process.argv.indexOf(FINISH_FLAG);
+if (finishIdx !== -1) {
+  finishUpdate(app, process.argv[finishIdx + 1], Number(process.argv[finishIdx + 2]));
+  return;
+}
+
+const UPDATE_CHECK_DELAY = 8000;                  // erste Prüfung kurz nach dem Start
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // danach alle 6 Stunden
 
 const ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -244,6 +256,9 @@ let hotkeysSuspended = false;
 let tray = null;
 let maximized = false;        // Overlay füllt gerade den ganzen Bildschirm
 let adblock = null;
+let updater = null;
+let updateAnnounced = null;   // Version, für die der Hinweis schon gezeigt wurde
+let manualUpdateCheck = false;
 let tabs = [];                // Browser-Tabs: { id, view, title, favicon, loading, pendingUrl }
 let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-Tabs
 let nextTabId = 1;
@@ -554,6 +569,8 @@ function sendState(extra = {}) {
     ytTitle: ytView ? ytView.webContents.getTitle().replace(/\s*-\s*YouTube\s*$/, '') : '',
     adblock: settings.state.adblock !== false,
     adblockStatus: adblock ? adblock.status : 'laedt',
+    update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
+    version: CURRENT_VERSION,
     hotkeys: settings.hotkeys,
     failedHotkeys,
     ...extra
@@ -1141,6 +1158,55 @@ function resetWindowPosition() {
 }
 
 // ---------------------------------------------------------------------------
+// Updates (neue Versionen von GitHub)
+// ---------------------------------------------------------------------------
+function setupUpdater() {
+  cleanupDownloads();
+  updater = new Updater({ onChange: onUpdateState });
+  setTimeout(() => updater.check(), UPDATE_CHECK_DELAY);
+  setInterval(() => updater.check(), UPDATE_CHECK_INTERVAL);
+}
+
+function onUpdateState(st) {
+  let notice;
+  if (st.status === 'available' && updateAnnounced !== st.latest) {
+    updateAnnounced = st.latest;
+    notice = `Neue Version ${st.latest} verfügbar – Klick auf „⬆ Update“ in der Tab-Leiste`;
+  } else if (manualUpdateCheck && st.status === 'none') {
+    manualUpdateCheck = false;
+    notice = `Du hast die neueste Version (${CURRENT_VERSION}).`;
+  } else if (manualUpdateCheck && st.status === 'available') {
+    manualUpdateCheck = false;
+  } else if (st.status === 'error' && manualUpdateCheck) {
+    manualUpdateCheck = false;
+    notice = `Update-Prüfung fehlgeschlagen: ${st.error}`;
+  } else if (st.status === 'ready') {
+    notice = 'Update heruntergeladen – Klick auf „↻ Neu starten“ in der Tab-Leiste';
+  }
+  sendState(notice ? { notice } : {});
+}
+
+function checkForUpdatesManually() {
+  if (!updater) return;
+  manualUpdateCheck = true;
+  updater.check();
+}
+
+// Klick auf den Update-Knopf: herunterladen -> neu starten (oder Seite öffnen, wenn aus dem Quellcode gestartet)
+function updateAction() {
+  if (!updater) return;
+  const st = updater.state.status;
+  if (st === 'available') {
+    if (updater.portableExe) updater.download(app.getPath('downloads'));
+    else createTab(RELEASES_PAGE, true);
+  } else if (st === 'ready') {
+    if (!updater.restart(() => app.quit())) createTab(RELEASES_PAGE, true);
+  } else if (st === 'error') {
+    checkForUpdatesManually();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tray-Symbol (unten rechts in der Taskleiste) – funktioniert immer,
 // auch im Durchklick-Modus oder wenn ein Hotkey nicht geht.
 // ---------------------------------------------------------------------------
@@ -1152,7 +1218,7 @@ const withKey = (text, name) => {
 function createTray() {
   const img = nativeImage.createFromPath(ICON_PATH).resize({ width: 16, height: 16, quality: 'best' });
   tray = new Tray(img);
-  tray.setToolTip('YouTube Overlay');
+  tray.setToolTip(`YouTube Overlay ${CURRENT_VERSION}`);
   // Linksklick: Overlay zeigen und Durchklicken ausschalten
   tray.on('click', () => {
     if (!win) return;
@@ -1176,6 +1242,11 @@ function updateTray() {
     { label: 'Werbeblocker', type: 'checkbox', checked: settings.state.adblock !== false, click: () => setAdblock(settings.state.adblock === false) },
     { label: 'Fenster zurücksetzen', click: () => resetWindowPosition() },
     { label: 'Einstellungen …', click: () => openSettingsWindow() },
+    updater && updater.state.status === 'ready'
+      ? { label: 'Update installieren und neu starten', click: () => updateAction() }
+      : updater && updater.state.status === 'available'
+        ? { label: `Update auf ${updater.state.latest} herunterladen`, click: () => updateAction() }
+        : { label: `Nach Updates suchen (Version ${CURRENT_VERSION})`, click: () => checkForUpdatesManually() },
     { type: 'separator' },
     { label: withKey('Beenden', 'quitApp'), click: () => app.quit() }
   ]));
@@ -1366,6 +1437,7 @@ ipcMain.on('back', (e) => {
   if (h.canGoBack()) h.goBack();
 });
 ipcMain.on('reload', (e) => { if (fromBar(e)) activeView().webContents.reload(); });
+ipcMain.on('update:action', (e) => { if (fromBar(e)) updateAction(); });
 ipcMain.on('tab:new', (e) => { if (fromBar(e)) { createTab(START_PAGE, true); focusAddressBar(); } });
 ipcMain.on('tab:activate', (e, id) => { if (fromBar(e)) activateTab(id === 'yt' ? 'yt' : Number(id)); });
 ipcMain.on('tab:close', (e, id) => { if (fromBar(e)) closeTab(Number(id)); });
@@ -1408,6 +1480,7 @@ app.whenReady().then(() => {
   createWindow();
   registerHotkeys();
   createTray();
+  setupUpdater();
 });
 
 app.on('before-quit', () => {

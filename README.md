@@ -9,6 +9,7 @@ Mit Werbeblocker, Browser-Tabs, Mini-Leiste, Durchklick-Modus, frei belegbaren H
 **[Neueste Version herunterladen](https://github.com/CoachDE/wow-overlay-browser/releases/latest)** → dort unter *Assets* die Datei **`YouTube-Overlay.exe`** anklicken.
 
 - Keine Installation nötig: Die .exe einfach speichern (z. B. auf dem Desktop) und per Doppelklick starten.
+- **Updates kommen automatisch** (ab Version 1.2.0): Gibt es eine neue Version, erscheint in der Tab-Leiste **„⬆ Update“**. Ein Klick lädt sie herunter, **„↻ Neu starten“** installiert sie. Die .exe wird dabei an Ort und Stelle ersetzt, Verknüpfungen bleiben gültig. Manuell: Tray-Symbol → *Nach Updates suchen*.
 - Nur für **Windows 10/11 (64 Bit)**.
 - Einstellungen werden unter `%APPDATA%\YouTube Overlay` gespeichert.
 

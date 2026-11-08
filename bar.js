@@ -80,6 +80,33 @@ const GLOBE_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 const CLOSE_ICON = '<svg viewBox="0 0 10 10"><path d="M2 2l6 6M8 2 2 8"/></svg>';
 
 $('btnNewTab').addEventListener('click', () => api.newTab());
+$('btnUpdate').addEventListener('click', () => api.updateAction());
+
+// Update-Knopf je nach Zustand
+function renderUpdate(u) {
+  const b = $('btnUpdate');
+  const show = u && ['available', 'downloading', 'ready', 'error'].includes(u.status) && (u.status !== 'error' || u.latest);
+  b.hidden = !show;
+  if (!show) return;
+  b.classList.toggle('busy', u.status === 'downloading');
+  b.classList.toggle('error', u.status === 'error');
+  b.disabled = u.status === 'downloading';
+  if (u.status === 'available') {
+    b.textContent = `⬆ Update ${u.latest}`;
+    b.title = u.selfUpdate
+      ? `Version ${u.latest} herunterladen (du hast ${u.current})`
+      : `Version ${u.latest} ist verfügbar – öffnet die Download-Seite`;
+  } else if (u.status === 'downloading') {
+    b.textContent = `⬇ ${u.progress || 0} %`;
+    b.title = `Version ${u.latest} wird heruntergeladen …`;
+  } else if (u.status === 'ready') {
+    b.textContent = '↻ Neu starten';
+    b.title = `Version ${u.latest} installieren – das Overlay startet kurz neu`;
+  } else {
+    b.textContent = '⚠ Update fehlgeschlagen';
+    b.title = `${u.error || 'Fehler'} – Klick: erneut versuchen`;
+  }
+}
 
 function makeTabEl(id) {
   const el = document.createElement('div');
@@ -159,6 +186,7 @@ api.onState((state) => {
     : 'Adresse eingeben oder mit Google suchen …';
   $('btnHome').title = state.activeTab === 'yt' ? 'YouTube-Startseite' : 'Startseite (Google)';
   if (state.tabs) renderTabs(state);
+  renderUpdate(state.update);
   if (state.notice) showStatus(state.notice, 5000);
   $('btnBack').disabled = !state.canGoBack;
   opacity.value = Math.round(state.opacity * 100);

@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('overlay', {
   openSettings: () => send('open-settings'),
   shorts: () => send('shorts'),
   newTab: () => send('tab:new'),
+  updateAction: () => send('update:action'),
   activateTab: (id) => send('tab:activate', id === 'yt' ? 'yt' : Number(id)),
   closeTab: (id) => send('tab:close', Number(id)),
   onFocusUrl: (callback) => {
