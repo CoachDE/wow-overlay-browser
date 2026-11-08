@@ -11,7 +11,8 @@ Mit Werbeblocker, Browser-Tabs, geteilter Ansicht, Twitch-Modus, Mini-Leiste, Du
 **[Neueste Version herunterladen](https://github.com/CoachDE/wow-overlay-browser/releases/latest)** → dort unter *Assets* die Datei **`YouTube-Overlay.exe`** anklicken.
 
 - Keine Installation nötig: Die .exe einfach speichern (z. B. auf dem Desktop) und per Doppelklick starten.
-- **Updates** (ab Version 1.6.0): Gibt es eine neue Version, erscheint im Overlay das Fenster **„Neue Version verfügbar“** mit dem Knopf **„Jetzt herunterladen und neu starten“**. Ein Klick lädt die Version (mit Fortschrittsbalken, du kannst weiterspielen) und startet das Overlay danach automatisch neu. Das Fenster lässt sich nicht wegklicken – es bleibt, bis aktualisiert wurde. Die .exe wird an Ort und Stelle ersetzt, Verknüpfungen bleiben gültig.
+- **Beim ersten Start** erklärt eine kurze **Tour** die Knöpfe der Leiste (überspringbar, jederzeit wieder unter ✱ Einstellungen → „Tour starten“ oder im Tray-Menü).
+- **Updates** (ab Version 1.6.0, geprüft beim Start, alle 30 Minuten und beim Benutzen des Overlays): Gibt es eine neue Version, erscheint im Overlay das Fenster **„Neue Version verfügbar“** mit dem Knopf **„Jetzt herunterladen und neu starten“**. Ein Klick lädt die Version (mit Fortschrittsbalken, du kannst weiterspielen) und startet das Overlay danach automatisch neu. Das Fenster lässt sich nicht wegklicken – es bleibt, bis aktualisiert wurde. Die .exe wird an Ort und Stelle ersetzt, Verknüpfungen bleiben gültig.
 - Die **aktuelle Version** steht unten in den Einstellungen (✱), dort gibt es auch „Nach Updates suchen“.
 - Nur für **Windows 10/11 (64 Bit)**.
 - Einstellungen werden unter `%APPDATA%\YouTube Overlay` gespeichert.

@@ -20,7 +20,8 @@ if (finishIdx !== -1) {
 }
 
 const UPDATE_CHECK_DELAY = 8000;                  // erste Prüfung kurz nach dem Start
-const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // danach alle 6 Stunden
+const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000;     // danach alle 30 Minuten
+const UPDATE_CHECK_ON_USE = 10 * 60 * 1000;       // zusätzlich beim Benutzen, wenn letzte Prüfung > 10 min her
 
 const ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -123,6 +124,7 @@ const DEFAULT_STATE = {
   adblock: true,           // Werbeblocker an/aus
   theme: 'gold',           // Design
   language: null,          // 'de' | 'en' (null = beim ersten Start nach Windows-Sprache)
+  tourDone: false,         // Tour durch die Leiste schon gesehen/übersprungen
   focusMode: false,        // Fokus-Modus: ohne Maus durchsichtig
   splitRatio: 0.5,         // geteilte Ansicht: Anteil der linken Seite
   focusOpacity: 0.3,       // Deckkraft im Fokus-Modus, wenn die Maus nicht über dem Overlay ist
@@ -327,6 +329,7 @@ let splitDivider = null;      // Position des Trennbalkens (für die Leiste)
 let splitDrag = null;         // laufendes Ziehen des Trennbalkens
 let lastBrowserTab = null;
 let twitch = null;            // Twitch-Modus: { channel, player, chat } (Tab-ids)
+let tourActive = false;       // Tour durch die Leiste läuft
 let nextTabId = 1;
 let previewTheme = null;      // Design-Vorschau, solange die Einstellungen offen sind
 let miniMode = false;         // Overlay ist zur Mini-Leiste verkleinert
@@ -534,6 +537,12 @@ function layout() {
     width: Math.max(0, w - BORDER * 2),
     height: Math.max(0, h - top - BORDER)
   };
+  // Tour: Seiten ausblenden, damit die Erklärungen unter der Leiste Platz haben
+  if (tourActive) {
+    splitDivider = null;
+    for (const [, view] of allViews()) { view.setBounds(bounds); view.setVisible(false); }
+    return;
+  }
   // Geteilte Ansicht: zwei Tabs nebeneinander, dazwischen der Trennbalken
   if (splitActive()) {
     const avail = Math.max(0, bounds.width - SPLIT_GAP);
@@ -584,7 +593,7 @@ function topHeight() {
 }
 
 function barShown() {
-  return settings.state.barVisible || barPeek;
+  return settings.state.barVisible || barPeek || tourActive;
 }
 
 function setBarPeek(on) {
@@ -711,6 +720,7 @@ function sendState(extra = {}) {
     update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
     version: CURRENT_VERSION,
     lang: settings.state.language,
+    tour: tourActive,
     bookmarks: settings.state.bookmarks,
     showBookmarks: bookmarksShown(),
     bookmarked: !!findBookmark(currentPage().url),
@@ -771,7 +781,7 @@ function checkFocusMode() {
   const b = win.getBounds();
   const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
   // Sichtbar bleiben: Maus drüber, Overlay wird gerade benutzt (Fokus) oder Einstellungen offen
-  const engaged = inside ||
+  const engaged = inside || tourActive ||
     (win.isFocused() && !clickThrough) ||
     (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible());
   if (engaged) {
@@ -1328,6 +1338,33 @@ function stopTwitch() {
   for (const id of [t.chat, t.player]) if (tabs.some((x) => x.id === id)) closeTab(id);
 }
 
+// ---------------------------------------------------------------------------
+// Tour durch die Leiste (beim ersten Start, jederzeit wiederholbar)
+// ---------------------------------------------------------------------------
+function startTour() {
+  if (!win) return;
+  if (miniMode) exitMini();
+  if (clickThrough) setClickThrough(false);
+  if (!win.isVisible()) { win.showInactive(); win.setAlwaysOnTop(true, 'screen-saver'); }
+  // Mindestgröße, damit die Sprechblasen Platz haben
+  const b = win.getBounds();
+  if (b.width < 560 || b.height < 330) {
+    win.setBounds(fitToWorkArea({ x: b.x + b.width - Math.max(b.width, 560), y: b.y, width: Math.max(b.width, 560), height: Math.max(b.height, 330) }));
+  }
+  tourActive = true;
+  layout();
+  sendState();
+}
+
+function endTour() {
+  if (!tourActive) return;
+  tourActive = false;
+  settings.state.tourDone = true;
+  saveSettingsSoon();
+  layout();
+  sendState();
+}
+
 function cycleTab(dir) {
   const order = ['yt', ...tabs.map((t) => t.id)];
   const i = order.indexOf(activeTab);
@@ -1644,6 +1681,7 @@ function enterMini() {
 
 function exitMini() {
   if (!win || !miniMode) return;
+  setTimeout(() => checkForUpdatesQuietly(UPDATE_CHECK_ON_USE), 500);
   const cur = win.getBounds();
   let target = shortsMode ? settings.state.shortsBounds : settings.state.bounds;
   if (!target) {
@@ -1687,8 +1725,24 @@ function resetWindowPosition() {
 function setupUpdater() {
   updater = new Updater({ onChange: onUpdateState });
   cleanupDownloads([app.getPath('downloads')], () => ['downloading', 'ready'].includes(updater.state.status));
-  setTimeout(() => updater.check(), UPDATE_CHECK_DELAY);
-  setInterval(() => updater.check(), UPDATE_CHECK_INTERVAL);
+  setTimeout(() => checkForUpdatesQuietly(UPDATE_CHECK_ON_USE), UPDATE_CHECK_DELAY);
+  setInterval(() => checkForUpdatesQuietly(), UPDATE_CHECK_INTERVAL);
+  // Wird das Overlay benutzt (angeklickt, eingeblendet, aus der Mini-Leiste geholt),
+  // kurz nachsehen, falls die letzte Prüfung länger her ist
+  if (win) {
+    win.on('focus', () => checkForUpdatesQuietly(UPDATE_CHECK_ON_USE));
+    win.on('show', () => checkForUpdatesQuietly(UPDATE_CHECK_ON_USE));
+  }
+}
+
+let lastUpdateCheck = 0;
+// Prüft im Hintergrund; minAge: nur wenn die letzte Prüfung mindestens so lange her ist
+function checkForUpdatesQuietly(minAge = 0) {
+  if (!updater) return;
+  if (Date.now() - lastUpdateCheck < minAge) return;
+  if (['checking', 'downloading', 'ready'].includes(updater.state.status)) return;
+  lastUpdateCheck = Date.now();
+  updater.check();
 }
 
 function updateInfo() {
@@ -1726,6 +1780,7 @@ function onUpdateState(st) {
 function checkForUpdatesManually() {
   if (!updater) return;
   manualUpdateCheck = true;
+  lastUpdateCheck = Date.now();
   updater.check();
 }
 
@@ -1845,6 +1900,7 @@ function updateTray() {
     { label: L('tray.adblock'), type: 'checkbox', checked: settings.state.adblock !== false, click: () => setAdblock(settings.state.adblock === false) },
     { label: L('tray.reset'), click: () => resetWindowPosition() },
     { label: L('tray.settings'), click: () => openSettingsWindow() },
+    { label: L('tray.tour'), click: () => startTour() },
     updater && updater.state.status === 'ready'
       ? { label: L('tray.updateInstall'), click: () => updateAction() }
       : updater && updater.state.status === 'available'
@@ -2081,6 +2137,12 @@ ipcMain.on('tab:new', (e) => { if (fromBar(e)) { createTab(START_PAGE, true); fo
 ipcMain.on('tab:activate', (e, id) => { if (fromBar(e)) activateTab(id === 'yt' ? 'yt' : Number(id)); });
 ipcMain.on('tab:close', (e, id) => { if (fromBar(e)) closeTab(Number(id)); });
 ipcMain.on('split:toggle', (e) => { if (fromBar(e)) setSplit(!split.on); });
+ipcMain.on('tour:end', (e) => { if (fromBar(e)) endTour(); });
+ipcMain.on('settings:start-tour', (e) => {
+  if (!isFromSettings(e)) return;
+  settingsWin.close();
+  setTimeout(startTour, 300);
+});
 ipcMain.on('twitch:toggle', (e) => { if (fromBar(e)) { if (twitchActive()) stopTwitch(); else startTwitch(); } });
 ipcMain.on('twitch:open', (e, channel) => { if (fromBar(e)) startTwitch(String(channel || '')); });
 ipcMain.on('split:drag-start', (e) => { if (fromBar(e)) startSplitDrag(); });
@@ -2127,6 +2189,9 @@ app.whenReady().then(() => {
   registerHotkeys();
   createTray();
   setupUpdater();
+  if (!settings.state.tourDone) {
+    setTimeout(() => { if (win && !win.isDestroyed()) startTour(); }, 2500);
+  }
 });
 
 app.on('before-quit', () => {

@@ -430,6 +430,115 @@ api.onEditBookmark((id) => {
   input.addEventListener('click', (e) => e.stopPropagation());
 });
 
+// ---------- Tour durch die Leiste ----------
+const TOUR_STEPS = [
+  { id: 'welcome' },
+  { id: 'url', sel: ['#urlForm'] },
+  { id: 'star', sel: ['#btnStar'], key: 'Control+D' },
+  { id: 'opacity', sel: ['.opacity'] },
+  { id: 'volume', sel: ['#volumeBox'] },
+  { id: 'shorts', sel: ['#btnShorts'] },
+  { id: 'cinema', sel: ['#btnCinema'] },
+  { id: 'twitch', sel: ['#btnTwitch'] },
+  { id: 'split', sel: ['#btnSplit'] },
+  { id: 'focus', sel: ['#btnFocus'] },
+  { id: 'click', sel: ['#btnClick'], hotkey: 'clickThrough' },
+  { id: 'bar', sel: ['#btnBar'] },
+  { id: 'settings', sel: ['#btnSettings'] },
+  { id: 'window', sel: ['#btnMin', '#btnMax', '#btnClose'] },
+  { id: 'tabs', sel: ['#btnNewTab'] },
+  { id: 'end' }
+];
+let tourSteps = null;   // aktive Schritte (ausgeblendete Knöpfe werden übersprungen)
+let tourIndex = 0;
+let tourState = null;   // letzter Zustand (für Hotkey-Anzeige)
+
+function tourRect(step) {
+  if (!step.sel) return null;
+  let r = null;
+  for (const s of step.sel) {
+    const el = document.querySelector(s);
+    if (!el) continue;
+    const b = el.getBoundingClientRect();
+    if (!b.width || !b.height) continue;
+    r = r ? { left: Math.min(r.left, b.left), top: Math.min(r.top, b.top), right: Math.max(r.right, b.right), bottom: Math.max(r.bottom, b.bottom) }
+      : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+  }
+  return r;
+}
+
+function startTourUi() {
+  tourSteps = TOUR_STEPS.filter((s) => !s.sel || tourRect(s));
+  tourIndex = 0;
+  $('tour').hidden = false;
+  renderTour();
+}
+
+function renderTour() {
+  if (!tourSteps) return;
+  const step = tourSteps[tourIndex];
+  const last = tourIndex === tourSteps.length - 1;
+  const k = step.key ? fmt(step.key) : step.hotkey && tourState ? hk(tourState, step.hotkey) : '';
+  $('tourTitle').textContent = T(`tour.${step.id}.t`);
+  $('tourText').textContent = T(`tour.${step.id}.x`, { k });
+  $('tourCount').textContent = T('tour.counter', { i: tourIndex + 1, n: tourSteps.length });
+  $('tourSkip').textContent = T('tour.skip');
+  $('tourSkip').hidden = last;
+  $('tourBack').textContent = T('tour.back');
+  $('tourBack').hidden = tourIndex === 0;
+  $('tourNext').textContent = last ? T('tour.done') : T('tour.next');
+
+  const ring = $('tourRing');
+  const bubble = $('tourBubble');
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const r = tourRect(step);
+  if (!r) {
+    // Begrüßung/Abschluss: mittig, alles abgedunkelt
+    ring.className = 'none';
+    Object.assign(ring.style, { left: `${W / 2}px`, top: `${H / 2}px`, width: '0px', height: '0px' });
+    bubble.classList.add('center');
+    bubble.style.left = `${Math.max(8, (W - 310) / 2)}px`;
+    bubble.style.top = `${Math.max(70, (H - bubble.offsetHeight) / 2)}px`;
+  } else {
+    ring.className = '';
+    const pad = 3;
+    Object.assign(ring.style, {
+      left: `${r.left - pad}px`, top: `${r.top - pad}px`,
+      width: `${r.right - r.left + pad * 2}px`, height: `${r.bottom - r.top + pad * 2}px`
+    });
+    bubble.classList.remove('center');
+    const cx = (r.left + r.right) / 2;
+    const left = Math.min(Math.max(8, cx - 155), W - 318);
+    bubble.style.left = `${left}px`;
+    bubble.style.top = `${r.bottom + 14}px`;
+    bubble.style.setProperty('--arrow', `${Math.min(Math.max(16, cx - left), 294)}px`);
+  }
+  $('tourNext').focus();
+}
+
+function closeTourUi() {
+  if (!tourSteps) return;
+  tourSteps = null;
+  $('tour').hidden = true;
+  api.tourEnd();
+}
+
+$('tourNext').addEventListener('click', () => {
+  if (!tourSteps) return;
+  if (tourIndex >= tourSteps.length - 1) closeTourUi();
+  else { tourIndex++; renderTour(); }
+});
+$('tourBack').addEventListener('click', () => { if (tourSteps && tourIndex > 0) { tourIndex--; renderTour(); } });
+$('tourSkip').addEventListener('click', () => closeTourUi());
+document.addEventListener('keydown', (e) => {
+  if (!tourSteps) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeTourUi(); }
+  else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); $('tourNext').click(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); $('tourBack').click(); }
+}, true);
+window.addEventListener('resize', () => { if (tourSteps) renderTour(); });
+
 let shownHotkeyWarning = false;
 const hk = (state, name) => (state.hotkeys && state.hotkeys[name] ? fmt(state.hotkeys[name]) : T('bar.noHotkey'));
 
@@ -442,6 +551,10 @@ api.onState((state) => {
     i18nApplied = true;
   }
   if (state.hotkeysChanged) shownHotkeyWarning = false;
+  tourState = state;
+  // Tour starten/beenden (erst nach dem Zeichnen, damit die Knöpfe ihre Position haben)
+  if (state.tour && !tourSteps) requestAnimationFrame(() => requestAnimationFrame(startTourUi));
+  else if (!state.tour && tourSteps) { tourSteps = null; $('tour').hidden = true; }
   if (state.theme && document.documentElement.dataset.theme !== state.theme) {
     document.documentElement.dataset.theme = state.theme;
   }

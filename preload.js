@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('overlay', {
   toggleBar: () => send('toggle-bar'),
   toggleFocus: () => send('toggle-focus'),
   toggleSplit: () => send('split:toggle'),
+  tourEnd: () => send('tour:end'),
+  startTour: () => send('settings:start-tour'),
   toggleTwitch: () => send('twitch:toggle'),
   openTwitch: (channel) => send('twitch:open', String(channel)),
   onTwitchPrompt: (callback) => {

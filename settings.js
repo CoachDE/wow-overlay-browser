@@ -257,6 +257,7 @@ $('btnDefaults').addEventListener('click', () => {
 });
 
 $('btnCancel').addEventListener('click', () => api.closeSettings());
+$('btnTour').addEventListener('click', () => api.startTour());
 $('btnX').addEventListener('click', () => api.closeSettings());
 
 $('btnSave').addEventListener('click', async () => {
