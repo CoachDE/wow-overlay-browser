@@ -1,0 +1,1277 @@
+'use strict';
+
+const { app, BrowserWindow, WebContentsView, globalShortcut, ipcMain, shell, screen, Tray, Menu, nativeImage, clipboard } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { formatAccelerator } = require('./keys.js');
+const { YouTubeAdblock } = require('./adblock.js');
+
+const ICON_PATH = path.join(__dirname, 'icon.png');
+
+// ---------------------------------------------------------------------------
+// Grundkonstanten
+// ---------------------------------------------------------------------------
+const BAR_HEIGHT = 36;     // Höhe der Steuerleiste oben
+const BORDER = 4;          // Rand rund um das Video (damit man die Fenstergröße ziehen kann)
+const MIN_OPACITY = 0.2;
+const MAX_OPACITY = 1.0;
+const OPACITY_STEP = 0.1;
+const SEEK_SECONDS = 10;
+const HOME_URL = 'https://www.youtube.com/';
+const SHORTS_URL = 'https://www.youtube.com/shorts';
+const PEEK_ZONE = 12;        // Pixel am oberen Rand, die die ausgeblendete Leiste wieder aufklappen
+const PEEK_HIDE_DELAY = 700; // ms, bis die aufgeklappte Leiste nach dem Wegfahren wieder verschwindet
+const TAB_HEIGHT = 28;       // Höhe der Tab-Leiste unter der Steuerleiste
+const TOP_HEIGHT = BAR_HEIGHT + TAB_HEIGHT;
+const START_PAGE = 'https://www.google.com/';
+const SEARCH_URL = 'https://www.google.com/search?q=';
+const MAX_TABS = 12;
+const MINI_WIDTH = 280;      // Mini-Leiste (minimiert, bleibt über WoW)
+const MINI_HEIGHT = BAR_HEIGHT;
+const MIN_WIDTH = 240;
+const MIN_HEIGHT = 160;
+// Designs (die Farben stehen in themes.css)
+const THEMES = [
+  { id: 'gold', name: 'Gold' },
+  { id: 'frost', name: 'Frost' },
+  { id: 'emerald', name: 'Smaragd' },
+  { id: 'arcane', name: 'Arkan' },
+  { id: 'blood', name: 'Blut' },
+  { id: 'plain', name: 'Schlicht' }
+];
+const THEME_IDS = new Set(THEMES.map((t) => t.id));         // Browser-Tabs zusätzlich zum YouTube-Tab
+// Rechte, die Websites bekommen dürfen – alles andere (Kamera, Mikro, Standort,
+// Benachrichtigungen …) wird abgelehnt.
+const ALLOWED_PERMISSIONS = new Set(['fullscreen', 'clipboard-sanitized-write', 'pointerLock']);
+
+const DEFAULT_HOTKEYS = {
+  toggleVisible: 'Control+Alt+Y',
+  quitApp: 'Control+Alt+X',
+  toggleMaximize: 'Control+Alt+G',
+  toggleMini: 'Control+Alt+H',
+  playPause: 'Control+Alt+K',
+  seekBack: 'Control+Alt+J',
+  seekForward: 'Control+Alt+L',
+  mute: 'Control+Alt+N',
+  clickThrough: 'Control+Alt+D',
+  toggleBar: 'Control+Alt+B',
+  cinema: 'Control+Alt+F',
+  opacityUp: 'Control+Alt+PageUp',
+  opacityDown: 'Control+Alt+PageDown',
+  shortsNext: 'Control+Alt+Down',
+  shortsPrev: 'Control+Alt+Up'
+};
+
+// Anzeigenamen der Hotkeys (Reihenfolge = Reihenfolge im Einstellungsfenster)
+const HOTKEY_LABELS = {
+  toggleVisible: 'Overlay ein-/ausblenden',
+  quitApp: 'Overlay beenden',
+  toggleMaximize: 'Maximieren / Normalgröße',
+  toggleMini: 'Mini-Leiste / Wiederherstellen',
+  playPause: 'Play / Pause',
+  seekBack: '10 Sekunden zurück',
+  seekForward: '10 Sekunden vor',
+  mute: 'Ton an/aus',
+  shortsNext: 'Nächstes Short',
+  shortsPrev: 'Vorheriges Short',
+  cinema: 'Kino-Modus',
+  clickThrough: 'Durchklicken',
+  toggleBar: 'Leiste ein-/ausblenden',
+  opacityUp: 'Deckkraft höher',
+  opacityDown: 'Deckkraft niedriger'
+};
+
+const DEFAULT_STATE = {
+  bounds: null,            // wird beim ersten Start berechnet
+  shortsBounds: null,      // eigene (hochkant) Fenstergröße für Shorts
+  opacity: 1.0,
+  barVisible: true,
+  adblock: true,           // Werbeblocker an/aus
+  theme: 'gold',           // Design
+  tabs: [],                // offene Browser-Tabs (Adressen), werden beim Start wiederhergestellt
+  lastUrl: HOME_URL
+};
+
+// Google/YouTube behandeln "Electron" im User-Agent teils wie einen unsicheren Browser.
+// Deshalb entfernen wir die Electron- und App-Kennung und sehen aus wie normales Chrome.
+app.userAgentFallback = app.userAgentFallback
+  .replace(/\sElectron\/\S+/i, '')
+  .replace(/\syoutube-overlay\/\S+/i, '');
+
+// Nur eine Instanz erlauben
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+// ---------------------------------------------------------------------------
+// Einstellungen (settings.json im Benutzerordner der App)
+// ---------------------------------------------------------------------------
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings() {
+  let raw = {};
+  try {
+    raw = JSON.parse(fs.readFileSync(settingsPath(), 'utf8'));
+  } catch (_) {
+    raw = {};
+  }
+  const settings = {
+    hotkeys: sanitizeHotkeys(raw.hotkeys),
+    state: { ...DEFAULT_STATE, ...(raw.state || {}) }
+  };
+  const o = Number(settings.state.opacity);
+  settings.state.opacity = Number.isFinite(o) ? clamp(o, MIN_OPACITY, MAX_OPACITY) : 1.0;
+  if (!THEME_IDS.has(settings.state.theme)) settings.state.theme = 'gold';
+  if (typeof settings.state.lastUrl !== 'string' || !isAllowedInApp(settings.state.lastUrl)) {
+    settings.state.lastUrl = HOME_URL;
+  }
+  return settings;
+}
+
+let saveTimer = null;
+function saveSettingsSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSettingsNow, 500);
+}
+
+function saveSettingsNow() {
+  clearTimeout(saveTimer);
+  try {
+    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+    fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Einstellungen konnten nicht gespeichert werden:', err);
+  }
+}
+
+function sanitizeHotkeys(input) {
+  const out = { ...DEFAULT_HOTKEYS };
+  if (input && typeof input === 'object') {
+    for (const name of Object.keys(DEFAULT_HOTKEYS)) {
+      if (typeof input[name] === 'string') out[name] = input[name].trim();
+    }
+  }
+  return out;
+}
+
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
+}
+
+// ---------------------------------------------------------------------------
+// URL-Hilfen
+// ---------------------------------------------------------------------------
+const IN_APP_HOSTS = [
+  'youtube.com', 'youtu.be', 'youtube-nocookie.com', 'google.com', 'google.de',
+  'gstatic.com', 'googleusercontent.com', 'ytimg.com', 'ggpht.com', 'googlevideo.com'
+];
+
+function hostMatches(host, domain) {
+  return host === domain || host.endsWith('.' + domain);
+}
+
+function isAllowedInApp(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    return IN_APP_HOSTS.some((d) => hostMatches(u.hostname, d));
+  } catch (_) {
+    return false;
+  }
+}
+
+// Macht aus beliebiger Eingabe eine YouTube-Adresse:
+// volle Links, youtu.be-Kurzlinks, Shorts, reine Video-IDs oder Suchbegriffe.
+function inputToUrl(input) {
+  const text = String(input || '').trim();
+  if (!text) return HOME_URL;
+
+  // Reine Video-ID (11 Zeichen)
+  if (/^[A-Za-z0-9_-]{11}$/.test(text)) {
+    return `https://www.youtube.com/watch?v=${text}`;
+  }
+
+  let candidate = text;
+  if (!/^https?:\/\//i.test(candidate) && /^(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i.test(candidate)) {
+    candidate = 'https://' + candidate;
+  }
+
+  try {
+    const u = new URL(candidate);
+    const host = u.hostname.toLowerCase();
+    if (hostMatches(host, 'youtu.be')) {
+      const id = u.pathname.slice(1).split('/')[0];
+      const t = u.searchParams.get('t');
+      if (id) return `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${t ? `&t=${encodeURIComponent(t)}` : ''}`;
+    }
+    if (hostMatches(host, 'youtube.com')) {
+      u.protocol = 'https:';
+      if (host === 'm.youtube.com' || host === 'youtube.com') u.hostname = 'www.youtube.com';
+      return u.toString();
+    }
+  } catch (_) {
+    // keine gültige URL -> Suche
+  }
+
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(text)}`;
+}
+
+function isShortsUrl(url) {
+  try {
+    const u = new URL(url);
+    return hostMatches(u.hostname, 'youtube.com') && /^\/shorts(\/|$)/.test(u.pathname);
+  } catch (_) {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fenster
+// ---------------------------------------------------------------------------
+let settings;
+let win = null;
+let ytView = null;
+let clickThrough = false;
+let shortsMode = false;       // Fenster ist gerade hochkant für Shorts
+let settingsWin = null;
+let hotkeysSuspended = false;
+let tray = null;
+let maximized = false;        // Overlay füllt gerade den ganzen Bildschirm
+let adblock = null;
+let tabs = [];                // Browser-Tabs: { id, view, title, favicon, loading, pendingUrl }
+let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-Tabs
+let nextTabId = 1;
+let previewTheme = null;      // Design-Vorschau, solange die Einstellungen offen sind
+let miniMode = false;         // Overlay ist zur Mini-Leiste verkleinert
+let ytPlaying = false;
+let barPeek = false;          // Leiste ist ausgeblendet, aber wegen der Maus kurz aufgeklappt
+let peekLeftAt = 0;
+let peekTimer = null;
+const failedHotkeys = [];
+
+function defaultBounds() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const width = 640;
+  const height = 360 + TOP_HEIGHT + BORDER;
+  return {
+    x: area.x + area.width - width - 40,
+    y: area.y + 40,
+    width,
+    height
+  };
+}
+
+// Prüft, ob gespeicherte Position noch auf einem vorhandenen Bildschirm liegt
+function boundsVisible(b) {
+  if (!b || ![b.x, b.y, b.width, b.height].every(Number.isFinite)) return false;
+  return screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return b.x < a.x + a.width - 50 && b.x + b.width > a.x + 50 &&
+           b.y < a.y + a.height - 30 && b.y + 30 > a.y;
+  });
+}
+
+function createWindow() {
+  const bounds = boundsVisible(settings.state.bounds) ? settings.state.bounds : defaultBounds();
+
+  win = new BrowserWindow({
+    ...bounds,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
+    frame: false,
+    resizable: true,
+    fullscreenable: false,
+    maximizable: false,
+    backgroundColor: '#0f0f0f',
+    title: 'YouTube Overlay',
+    icon: ICON_PATH,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+
+  // "screen-saver" ist die höchste Ebene – liegt auch über randlosen Vollbild-Spielen
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setOpacity(settings.state.opacity);
+
+  win.loadFile(path.join(__dirname, 'bar.html'));
+
+  ytView = new WebContentsView({
+    webPreferences: {
+      partition: 'persist:youtube',   // Login, Cookie-Zustimmung usw. bleiben erhalten
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false     // Video + Werbe-Skipper laufen weiter, wenn ein anderer Tab offen ist
+    }
+  });
+  ytView.setBackgroundColor('#0f0f0f');
+  win.contentView.addChildView(ytView);
+  layout();
+
+  const yt = ytView.webContents;
+
+  setupSession(yt.session);
+
+  // Links, die neue Fenster öffnen wollen: YouTube-Links im YouTube-Tab, alles andere in einem neuen Browser-Tab
+  yt.setWindowOpenHandler(({ url }) => {
+    if (isAllowedInApp(url)) {
+      yt.loadURL(url);
+    } else {
+      openExternalLink(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Der YouTube-Tab bleibt bei YouTube: fremde Seiten öffnen sich in einem Browser-Tab
+  yt.on('will-navigate', (event, url) => {
+    if (!isAllowedInApp(url)) {
+      event.preventDefault();
+      openExternalLink(url);
+    }
+  });
+  attachCommonHandlers(yt);
+  yt.on('media-started-playing', () => { ytPlaying = true; sendState(); });
+  yt.on('media-paused', () => { ytPlaying = false; sendState(); });
+  yt.on('page-title-updated', () => sendState());
+
+  const onUrlChange = () => {
+    const url = yt.getURL();
+    if (isAllowedInApp(url)) {
+      settings.state.lastUrl = url;
+      saveSettingsSoon();
+    }
+    if (activeTab === 'yt') applyShortsMode(isShortsUrl(url));
+    sendState();
+  };
+  yt.on('did-navigate', onUrlChange);
+  yt.on('did-navigate-in-page', onUrlChange);
+
+  // YouTube-Vollbild: Das Fenster bleibt so groß wie es ist, nur das Video füllt das Overlay.
+  // (fullscreenable: false verhindert, dass das Overlay den ganzen Bildschirm verdeckt)
+  yt.on('enter-html-full-screen', () => sendState({ cinema: true }));
+  yt.on('leave-html-full-screen', () => sendState({ cinema: false }));
+
+  // Werbeblocker vorbereiten, dann YouTube laden (wartet höchstens 4 s auf die Filterlisten)
+  adblock = new YouTubeAdblock({
+    session: yt.session,
+    webContents: yt,
+    cacheFile: path.join(app.getPath('userData'), 'adblock-engine.bin'),
+    enabled: settings.state.adblock !== false
+  });
+  adblock.init(4000).then(() => {
+    if (ytView && !yt.isDestroyed()) yt.loadURL(settings.state.lastUrl);
+    restoreTabs();
+    sendState();
+  });
+
+  // Tastenkürzel auch, wenn die Steuerleiste (z. B. das Adressfeld) den Fokus hat
+  attachShortcuts(win.webContents);
+
+  win.on('resize', () => { layout(); rememberBounds(); });
+  win.on('move', rememberBounds);
+
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
+  win.webContents.on('did-finish-load', () => sendState());
+
+  peekTimer = setInterval(checkBarPeek, 100);
+
+  win.on('show', updateTray);
+  win.on('hide', updateTray);
+
+  win.on('closed', () => {
+    clearInterval(peekTimer);
+    win = null;
+    ytView = null;
+  });
+}
+
+function layout() {
+  if (!win || !ytView) return;
+  const [w, h] = win.getContentSize();
+  const top = barShown() ? TOP_HEIGHT : BORDER;
+  const bounds = {
+    x: BORDER,
+    y: top,
+    width: Math.max(0, w - BORDER * 2),
+    height: Math.max(0, h - top - BORDER)
+  };
+  // Alle Tabs liegen übereinander, nur der aktive ist sichtbar (in der Mini-Leiste keiner)
+  ytView.setBounds(bounds);
+  ytView.setVisible(!miniMode && activeTab === 'yt');
+  for (const t of tabs) {
+    t.view.setBounds(bounds);
+    t.view.setVisible(!miniMode && t.id === activeTab);
+  }
+}
+
+function barShown() {
+  return settings.state.barVisible || barPeek;
+}
+
+function setBarPeek(on) {
+  if (barPeek === on) return;
+  barPeek = on;
+  peekLeftAt = 0;
+  layout();
+  sendState();
+}
+
+// Ist die Leiste ausgeblendet, klappt sie auf, sobald die Maus an den oberen Rand
+// des Overlays kommt, und verschwindet wieder, wenn die Maus weggeht.
+function checkBarPeek() {
+  if (!win || win.isDestroyed()) return;
+  if (settings.state.barVisible || miniMode || clickThrough || !win.isVisible() || win.isMinimized()) {
+    if (barPeek) setBarPeek(false);
+    return;
+  }
+  const p = screen.getCursorScreenPoint();
+  const b = win.getBounds();
+  const insideX = p.x >= b.x && p.x < b.x + b.width;
+  if (!barPeek) {
+    if (insideX && p.y >= b.y && p.y < b.y + PEEK_ZONE) setBarPeek(true);
+    return;
+  }
+  const overBar = insideX && p.y >= b.y && p.y < b.y + TOP_HEIGHT + 8;
+  const typing = win.isFocused() && win.webContents.isFocused();
+  if (overBar || typing) {
+    peekLeftAt = 0;
+  } else if (!peekLeftAt) {
+    peekLeftAt = Date.now();
+  } else if (Date.now() - peekLeftAt >= PEEK_HIDE_DELAY) {
+    setBarPeek(false);
+  }
+}
+
+// Hält ein Rechteck vollständig im Arbeitsbereich des Bildschirms, auf dem es liegt
+function fitToWorkArea(b) {
+  const area = screen.getDisplayMatching(b).workArea;
+  const width = Math.min(b.width, area.width);
+  const height = Math.min(b.height, area.height);
+  return {
+    x: Math.round(clamp(b.x, area.x, area.x + area.width - width)),
+    y: Math.round(clamp(b.y, area.y, area.y + area.height - height)),
+    width: Math.round(width),
+    height: Math.round(height)
+  };
+}
+
+// Hochkant-Größe (9:16) für Shorts, passend zur aktuellen Fensterhöhe
+function defaultShortsSize(cur) {
+  const area = screen.getDisplayMatching(cur).workArea;
+  const height = Math.min(Math.max(cur.height, 640), area.height - 40);
+  const videoHeight = height - TOP_HEIGHT - BORDER;
+  const width = Math.max(320, Math.round(videoHeight * 9 / 16) + BORDER * 2);
+  return { width, height };
+}
+
+// Shorts sind Hochkant-Videos: Beim Öffnen eines Shorts wird das Overlay hochkant,
+// beim Verlassen kehrt es zur normalen Größe zurück. Beide Größen werden gemerkt.
+// Die rechte obere Ecke bleibt dabei an ihrem Platz.
+function applyShortsMode(on) {
+  if (!win || on === shortsMode || win.isMinimized()) return;
+  if (maximized || miniMode) { shortsMode = on; return; }
+  const cur = win.getBounds();
+  let target;
+  if (on) {
+    settings.state.bounds = cur;
+    target = settings.state.shortsBounds || defaultShortsSize(cur);
+  } else {
+    settings.state.shortsBounds = cur;
+    target = settings.state.bounds || defaultBounds();
+  }
+  shortsMode = on;
+  win.setBounds(fitToWorkArea({
+    x: cur.x + cur.width - target.width,
+    y: cur.y,
+    width: target.width,
+    height: target.height
+  }));
+  layout();
+  saveSettingsSoon();
+}
+
+function rememberBounds() {
+  if (!win || win.isMinimized() || maximized || miniMode) return;
+  if (shortsMode) settings.state.shortsBounds = win.getBounds();
+  else settings.state.bounds = win.getBounds();
+  saveSettingsSoon();
+}
+
+function sendState(extra = {}) {
+  updateTray();
+  if (!win || win.webContents.isDestroyed()) return;
+  const view = activeView();
+  const wc = view && !view.webContents.isDestroyed() ? view.webContents : null;
+  const active = activeTab === 'yt' ? null : tabs.find((t) => t.id === activeTab);
+  win.webContents.send('state', {
+    url: active && active.pendingUrl ? active.pendingUrl : (wc ? wc.getURL() : ''),
+    canGoBack: wc ? wc.navigationHistory.canGoBack() : false,
+    activeTab,
+    tabs: tabs.map((t) => ({ id: t.id, title: t.title, favicon: t.favicon, loading: t.loading })),
+    youtubeLoading: !!(ytView && ytView.webContents.isLoading()),
+    opacity: settings.state.opacity,
+    clickThrough,
+    barVisible: settings.state.barVisible,
+    barPeek,
+    shortsMode,
+    maximized,
+    miniMode,
+    theme: previewTheme || settings.state.theme,
+    ytPlaying,
+    ytTitle: ytView ? ytView.webContents.getTitle().replace(/\s*-\s*YouTube\s*$/, '') : '',
+    adblock: settings.state.adblock !== false,
+    adblockStatus: adblock ? adblock.status : 'laedt',
+    hotkeys: settings.hotkeys,
+    failedHotkeys,
+    ...extra
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Aktionen
+// ---------------------------------------------------------------------------
+function setOpacity(value) {
+  settings.state.opacity = Math.round(clamp(value, MIN_OPACITY, MAX_OPACITY) * 100) / 100;
+  if (win) win.setOpacity(settings.state.opacity);
+  saveSettingsSoon();
+  sendState();
+}
+
+function setClickThrough(on) {
+  clickThrough = !!on;
+  if (win) {
+    win.setIgnoreMouseEvents(clickThrough);
+    // Im Durchklick-Modus darf das Overlay WoW nicht den Fokus wegnehmen
+    win.setFocusable(!clickThrough);
+    if (clickThrough) win.blur();
+  }
+  sendState();
+}
+
+function setAdblock(on) {
+  settings.state.adblock = !!on;
+  saveSettingsSoon();
+  if (adblock) adblock.setEnabled(!!on);
+  sendState();
+}
+
+function setBarVisible(on) {
+  settings.state.barVisible = !!on;
+  barPeek = false;
+  peekLeftAt = 0;
+  layout();
+  saveSettingsSoon();
+  sendState();
+}
+
+function toggleVisible() {
+  if (!win) return;
+  if (win.isVisible() && !win.isMinimized()) {
+    win.hide();
+  } else {
+    if (win.isMinimized()) win.restore();
+    // showInactive: WoW behält den Tastatur-Fokus
+    win.showInactive();
+    win.setAlwaysOnTop(true, 'screen-saver');
+  }
+}
+
+// Steuert den YouTube-Player. Nutzt die interne Player-API, sonst das <video>-Element.
+function playerCommand(cmd) {
+  if (!ytView) return;
+  const js = `(() => {
+    const onShorts = location.pathname.startsWith('/shorts');
+    const p = document.getElementById(onShorts ? 'shorts-player' : 'movie_player');
+    const v = (p && p.querySelector('video')) || document.querySelector('video');
+    const cmd = ${JSON.stringify(cmd)};
+    const seek = ${SEEK_SECONDS};
+    const has = (fn) => p && typeof p[fn] === 'function';
+    switch (cmd) {
+      case 'playPause':
+        if (has('getPlayerState') && has('playVideo') && has('pauseVideo')) {
+          p.getPlayerState() === 1 ? p.pauseVideo() : p.playVideo();
+        } else if (v) { v.paused ? v.play() : v.pause(); }
+        break;
+      case 'seekBack':
+      case 'seekForward': {
+        const d = cmd === 'seekBack' ? -seek : seek;
+        if (has('getCurrentTime') && has('seekTo')) p.seekTo(Math.max(0, p.getCurrentTime() + d), true);
+        else if (v) v.currentTime = Math.max(0, v.currentTime + d);
+        break;
+      }
+      case 'mute':
+        if (has('isMuted') && has('mute') && has('unMute')) { p.isMuted() ? p.unMute() : p.mute(); }
+        else if (v) v.muted = !v.muted;
+        break;
+      case 'cinema':
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          const target = p || v;
+          if (target) target.requestFullscreen();
+        }
+        break;
+    }
+    return true;
+  })()`;
+  // userGesture = true, damit Abspielen/Vollbild ohne echten Klick erlaubt ist
+  ytView.webContents.executeJavaScript(js, true).catch(() => {});
+}
+
+// Nächstes / vorheriges Short: klickt YouTubes eigene Pfeil-Knöpfe,
+// falls die fehlen, wird eine echte Pfeiltaste an die Seite geschickt.
+function shortsStep(dir) {
+  if (!ytView) return;
+  const yt = ytView.webContents;
+  if (!isShortsUrl(yt.getURL())) return;
+  const sel = dir === 'next' ? '#navigation-button-down button' : '#navigation-button-up button';
+  const js = `(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (b && !b.disabled) { b.click(); return true; } return false; })()`;
+  yt.executeJavaScript(js, true)
+    .then((clicked) => {
+      if (clicked) return;
+      const keyCode = dir === 'next' ? 'Down' : 'Up';
+      yt.sendInputEvent({ type: 'keyDown', keyCode });
+      yt.sendInputEvent({ type: 'keyUp', keyCode });
+    })
+    .catch(() => {});
+}
+
+function navigate(input) {
+  if (!ytView) return;
+  activateTab('yt');
+  ytView.webContents.loadURL(inputToUrl(input));
+}
+
+// ---------------------------------------------------------------------------
+// Browser-Tabs
+// ---------------------------------------------------------------------------
+const isWebUrl = (url) => /^https?:\/\//i.test(String(url || ''));
+
+function isYouTubeUrl(url) {
+  try {
+    const host = new URL(url).hostname;
+    return hostMatches(host, 'youtube.com') || hostMatches(host, 'youtu.be');
+  } catch (_) {
+    return false;
+  }
+}
+
+// Erkennt Adressen in der Eingabe ("wowhead.com", "https://…", "localhost:3000").
+// Gibt null zurück, wenn es eher ein Suchbegriff ist.
+function toWebUrl(text) {
+  const t = String(text || '').trim();
+  if (!t || /\s/.test(t)) return null;
+  if (isWebUrl(t)) {
+    try { return new URL(t).toString(); } catch (_) { return null; }
+  }
+  if (/^localhost(:\d+)?(\/.*)?$/i.test(t)) return 'http://' + t;
+  if (/^([a-z0-9-]+\.)+[a-z]{2,}(:\d+)?([/?#].*)?$/i.test(t)) {
+    try { return new URL('https://' + t).toString(); } catch (_) { return null; }
+  }
+  return null;
+}
+
+function activeView() {
+  if (activeTab === 'yt') return ytView;
+  const t = tabs.find((x) => x.id === activeTab);
+  return t ? t.view : ytView;
+}
+
+function hostLabel(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return 'Neuer Tab'; }
+}
+
+// Fremder Link aus YouTube oder einer Website: http(s) -> neuer Tab, mailto -> Mailprogramm,
+// alles andere (z. B. Programm-Links) wird ignoriert.
+function openExternalLink(url) {
+  if (isWebUrl(url)) createTab(url, true);
+  else if (/^mailto:/i.test(url)) shell.openExternal(url);
+}
+
+function createTab(url, activate = true, lazy = false) {
+  if (!win) return null;
+  if (tabs.length >= MAX_TABS) {
+    sendState({ notice: `Höchstens ${MAX_TABS} Browser-Tabs – bitte einen schließen.` });
+    return null;
+  }
+  const view = new WebContentsView({
+    webPreferences: {
+      partition: 'persist:youtube',   // gleiche Sitzung wie YouTube (Werbeblocker, Logins)
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  view.setBackgroundColor('#ffffff');
+  const tab = { id: nextTabId++, view, title: hostLabel(url), favicon: '', loading: false, pendingUrl: lazy ? url : null };
+  tabs.push(tab);
+  win.contentView.addChildView(view);
+  wireTab(tab);
+  if (!lazy) view.webContents.loadURL(url).catch(() => {});
+  if (activate) activateTab(tab.id);
+  else layout();
+  saveTabsSoon();
+  sendState();
+  return tab;
+}
+
+function wireTab(tab) {
+  const wc = tab.view.webContents;
+  wc.setWindowOpenHandler(({ url }) => {
+    openExternalLink(url);
+    return { action: 'deny' };
+  });
+  wc.on('will-navigate', (event, url) => {
+    if (!isWebUrl(url)) {
+      event.preventDefault();
+      openExternalLink(url);
+    }
+  });
+  wc.on('page-title-updated', (_e, title) => { tab.title = title || hostLabel(wc.getURL()); sendState(); });
+  wc.on('page-favicon-updated', (_e, favicons) => {
+    tab.favicon = (favicons || []).find((f) => /^(https?:|data:image\/)/i.test(f)) || '';
+    sendState();
+  });
+  wc.on('did-start-loading', () => { tab.loading = true; sendState(); });
+  wc.on('did-stop-loading', () => { tab.loading = false; sendState(); });
+  wc.on('did-navigate', () => { tab.favicon = ''; saveTabsSoon(); sendState(); });
+  wc.on('did-navigate-in-page', () => { saveTabsSoon(); sendState(); });
+  wc.on('render-process-gone', () => { tab.title = 'Seite abgestürzt – neu laden'; sendState(); });
+  attachCommonHandlers(wc);
+}
+
+function activateTab(id) {
+  if (!win) return;
+  if (id !== 'yt' && !tabs.some((t) => t.id === id)) id = 'yt';
+  activeTab = id;
+  const t = tabs.find((x) => x.id === id);
+  if (t && t.pendingUrl) {
+    // Wiederhergestellter Tab wird erst beim ersten Anklicken geladen
+    const url = t.pendingUrl;
+    t.pendingUrl = null;
+    t.view.webContents.loadURL(url).catch(() => {});
+  }
+  layout();
+  // Shorts-Hochformat nur, solange der YouTube-Tab mit einem Short aktiv ist
+  applyShortsMode(id === 'yt' && !!ytView && isShortsUrl(ytView.webContents.getURL()));
+  if (win.isFocused() && !win.webContents.isFocused()) activeView().webContents.focus();
+  sendState();
+}
+
+function closeTab(id) {
+  const i = tabs.findIndex((t) => t.id === id);
+  if (i < 0) return;
+  const [tab] = tabs.splice(i, 1);
+  if (win) win.contentView.removeChildView(tab.view);
+  try { tab.view.webContents.close(); } catch (_) { /* schon zu */ }
+  if (activeTab === id) {
+    const next = tabs[i] || tabs[i - 1];
+    activateTab(next ? next.id : 'yt');
+  } else {
+    layout();
+    sendState();
+  }
+  saveTabsSoon();
+}
+
+function cycleTab(dir) {
+  const order = ['yt', ...tabs.map((t) => t.id)];
+  const i = order.indexOf(activeTab);
+  activateTab(order[(i + dir + order.length) % order.length]);
+}
+
+function saveTabsSoon() {
+  settings.state.tabs = tabs
+    .map((t) => t.pendingUrl || t.view.webContents.getURL())
+    .filter(isWebUrl);
+  saveSettingsSoon();
+}
+
+function restoreTabs() {
+  const urls = Array.isArray(settings.state.tabs) ? settings.state.tabs.filter(isWebUrl).slice(0, MAX_TABS) : [];
+  for (const url of urls) createTab(url, false, true);
+  activateTab('yt');
+}
+
+// Eingabe im Adressfeld: im YouTube-Tab YouTube-Suche/-Links (fremde Adressen -> neuer Tab),
+// in Browser-Tabs Adresse laden oder mit Google suchen.
+function navigateInput(input) {
+  const text = String(input || '').trim();
+  const web = toWebUrl(text);
+  if (activeTab === 'yt') {
+    if (web && !isYouTubeUrl(web)) createTab(web, true);
+    else navigate(text);
+    return;
+  }
+  const view = activeView();
+  view.webContents.loadURL(web || (SEARCH_URL + encodeURIComponent(text))).catch(() => {});
+}
+
+function focusAddressBar() {
+  if (!win) return;
+  win.focus();
+  win.webContents.focus();
+  win.webContents.send('focus-url');
+}
+
+// ---------------------------------------------------------------------------
+// Gemeinsame Helfer für alle Seiten (YouTube-Tab, Browser-Tabs)
+// ---------------------------------------------------------------------------
+
+// Tastenkürzel im Overlay (nur wenn das Overlay den Fokus hat – keine globalen Hotkeys)
+function attachShortcuts(wc) {
+  wc.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const key = String(input.key || '').toLowerCase();
+    const ctrl = input.control && !input.alt;
+    let handled = true;
+    if (ctrl && key === 't') { createTab(START_PAGE, true); focusAddressBar(); }
+    else if (ctrl && key === 'w') { if (activeTab !== 'yt') closeTab(activeTab); }
+    else if (ctrl && key === 'tab') cycleTab(input.shift ? -1 : 1);
+    else if (ctrl && key === 'l') focusAddressBar();
+    else if ((ctrl && key === 'r') || (!input.control && !input.alt && key === 'f5')) activeView().webContents.reload();
+    else if (input.alt && !input.control && key === 'arrowleft') { const h = activeView().webContents.navigationHistory; if (h.canGoBack()) h.goBack(); }
+    else if (input.alt && !input.control && key === 'arrowright') { const h = activeView().webContents.navigationHistory; if (h.canGoForward()) h.goForward(); }
+    else handled = false;
+    if (handled) event.preventDefault();
+  });
+}
+
+// Rechtsklick-Menü wie im normalen Browser
+function attachContextMenu(wc) {
+  wc.on('context-menu', (_e, p) => {
+    const items = [];
+    if (p.linkURL && isWebUrl(p.linkURL)) {
+      items.push({ label: 'Link in neuem Tab öffnen', click: () => createTab(p.linkURL, true) });
+      items.push({ label: 'Link-Adresse kopieren', click: () => clipboard.writeText(p.linkURL) });
+      items.push({ type: 'separator' });
+    }
+    if (p.isEditable) {
+      items.push({ label: 'Ausschneiden', role: 'cut', enabled: p.editFlags.canCut });
+      items.push({ label: 'Kopieren', role: 'copy', enabled: p.editFlags.canCopy });
+      items.push({ label: 'Einfügen', role: 'paste', enabled: p.editFlags.canPaste });
+      items.push({ label: 'Alles auswählen', role: 'selectAll' });
+      items.push({ type: 'separator' });
+    } else if (p.selectionText && p.selectionText.trim()) {
+      const sel = p.selectionText.trim();
+      items.push({ label: 'Kopieren', role: 'copy' });
+      items.push({ label: `Mit Google suchen: „${sel.length > 24 ? sel.slice(0, 24) + '…' : sel}“`, click: () => createTab(SEARCH_URL + encodeURIComponent(sel), true) });
+      items.push({ type: 'separator' });
+    }
+    if (p.mediaType === 'image' && isWebUrl(p.srcURL)) {
+      items.push({ label: 'Bild in neuem Tab öffnen', click: () => createTab(p.srcURL, true) });
+      items.push({ type: 'separator' });
+    }
+    const h = wc.navigationHistory;
+    items.push({ label: 'Zurück', enabled: h.canGoBack(), click: () => h.goBack() });
+    items.push({ label: 'Vorwärts', enabled: h.canGoForward(), click: () => h.goForward() });
+    items.push({ label: 'Neu laden', click: () => wc.reload() });
+    const url = wc.getURL();
+    if (isWebUrl(url)) {
+      items.push({ type: 'separator' });
+      items.push({ label: 'Seitenadresse kopieren', click: () => clipboard.writeText(url) });
+      items.push({ label: 'Im Windows-Browser öffnen', click: () => shell.openExternal(url) });
+    }
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
+}
+
+function attachCommonHandlers(wc) {
+  attachShortcuts(wc);
+  attachContextMenu(wc);
+}
+
+// Sitzung absichern: keine Kamera/Mikro/Standort/Benachrichtigungen,
+// Downloads direkt in den Download-Ordner (ein Speichern-Dialog läge sonst hinter dem Overlay).
+function setupSession(ses) {
+  ses.setPermissionRequestHandler((_wc, permission, callback) => callback(ALLOWED_PERMISSIONS.has(permission)));
+  ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+  ses.on('will-download', (_e, item) => {
+    const dir = app.getPath('downloads');
+    const parsed = path.parse(item.getFilename() || 'download');
+    let target = path.join(dir, parsed.base);
+    for (let n = 1; fs.existsSync(target) && n < 1000; n++) {
+      target = path.join(dir, `${parsed.name} (${n})${parsed.ext}`);
+    }
+    item.setSavePath(target);
+    sendState({ notice: `Download läuft: ${path.basename(target)}` });
+    item.once('done', (_ev, state) => {
+      sendState({
+        notice: state === 'completed'
+          ? `Download fertig: Downloads\\${path.basename(target)}`
+          : `Download abgebrochen: ${path.basename(target)}`
+      });
+    });
+  });
+}
+
+// Maximieren: Overlay füllt den ganzen Bildschirm (über WoW), nochmal = alte Größe.
+function toggleMaximize() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  if (miniMode) exitMini();
+  if (!maximized) {
+    rememberBounds();
+    saveSettingsNow();
+    maximized = true;
+    win.setBounds(screen.getDisplayMatching(win.getBounds()).bounds);
+  } else {
+    maximized = false;
+    const saved = shortsMode ? settings.state.shortsBounds : settings.state.bounds;
+    let target = saved;
+    if (!target) {
+      target = defaultBounds();
+      if (shortsMode) Object.assign(target, defaultShortsSize(target));
+    }
+    win.setBounds(fitToWorkArea(target));
+  }
+  win.showInactive();
+  win.setAlwaysOnTop(true, 'screen-saver');
+  layout();
+  sendState();
+}
+
+// Minimieren innerhalb von WoW: Das Overlay schrumpft zu einer kleinen Leiste
+// (Play/Pause, Titel, Wiederherstellen), bleibt aber über dem Spiel. Video läuft weiter.
+// Die rechte obere Ecke bleibt an ihrem Platz.
+function enterMini() {
+  if (!win || miniMode) return;
+  if (win.isMinimized()) win.restore();
+  if (maximized) {
+    maximized = false;
+  } else {
+    rememberBounds();
+  }
+  saveSettingsNow();
+  const cur = win.getBounds();
+  miniMode = true;
+  barPeek = false;
+  layout();
+  win.setMinimumSize(120, MINI_HEIGHT);
+  win.setResizable(false);
+  win.setBounds(fitToWorkArea({ x: cur.x + cur.width - MINI_WIDTH, y: cur.y, width: MINI_WIDTH, height: MINI_HEIGHT }));
+  win.showInactive();
+  win.setAlwaysOnTop(true, 'screen-saver');
+  sendState();
+}
+
+function exitMini() {
+  if (!win || !miniMode) return;
+  const cur = win.getBounds();
+  let target = shortsMode ? settings.state.shortsBounds : settings.state.bounds;
+  if (!target) {
+    target = defaultBounds();
+    if (shortsMode) Object.assign(target, defaultShortsSize(target));
+  }
+  miniMode = false;
+  win.setResizable(true);
+  win.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+  win.setBounds(fitToWorkArea({ x: cur.x + cur.width - target.width, y: cur.y, width: target.width, height: target.height }));
+  layout();
+  win.setAlwaysOnTop(true, 'screen-saver');
+  sendState();
+}
+
+function toggleMini() {
+  if (miniMode) exitMini(); else enterMini();
+}
+
+// Fenster an die Standard-Position holen (falls es verloren gegangen ist)
+function resetWindowPosition() {
+  if (!win) return;
+  if (miniMode) exitMini();
+  maximized = false;
+  const d = defaultBounds();
+  if (shortsMode) {
+    const sz = defaultShortsSize(d);
+    d.x = d.x + d.width - sz.width;
+    d.width = sz.width;
+    d.height = sz.height;
+  }
+  if (win.isMinimized()) win.restore();
+  win.setBounds(fitToWorkArea(d));
+  win.showInactive();
+  win.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// ---------------------------------------------------------------------------
+// Tray-Symbol (unten rechts in der Taskleiste) – funktioniert immer,
+// auch im Durchklick-Modus oder wenn ein Hotkey nicht geht.
+// ---------------------------------------------------------------------------
+const withKey = (text, name) => {
+  const accel = settings && settings.hotkeys[name];
+  return accel ? `${text}\t${formatAccelerator(accel)}` : text;
+};
+
+function createTray() {
+  const img = nativeImage.createFromPath(ICON_PATH).resize({ width: 16, height: 16, quality: 'best' });
+  tray = new Tray(img);
+  tray.setToolTip('YouTube Overlay');
+  // Linksklick: Overlay zeigen und Durchklicken ausschalten
+  tray.on('click', () => {
+    if (!win) return;
+    if (clickThrough) setClickThrough(false);
+    if (!win.isVisible() || win.isMinimized()) toggleVisible();
+  });
+  updateTray();
+}
+
+function updateTray() {
+  if (!tray || tray.isDestroyed()) return;
+  const visible = !!win && win.isVisible() && !win.isMinimized();
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'YouTube Overlay', enabled: false },
+    { type: 'separator' },
+    { label: withKey(visible ? 'Overlay ausblenden' : 'Overlay anzeigen', 'toggleVisible'), click: () => toggleVisible() },
+    { label: withKey('Durchklicken', 'clickThrough'), type: 'checkbox', checked: clickThrough, click: () => setClickThrough(!clickThrough) },
+    { label: withKey('Leiste anzeigen', 'toggleBar'), type: 'checkbox', checked: !!(settings && settings.state.barVisible), click: () => setBarVisible(!settings.state.barVisible) },
+    { label: withKey(miniMode ? 'Mini-Leiste wiederherstellen' : 'Zur Mini-Leiste verkleinern', 'toggleMini'), click: () => toggleMini() },
+    { label: withKey(maximized ? 'Normalgröße' : 'Maximieren', 'toggleMaximize'), click: () => toggleMaximize() },
+    { label: 'Werbeblocker', type: 'checkbox', checked: settings.state.adblock !== false, click: () => setAdblock(settings.state.adblock === false) },
+    { label: 'Fenster zurücksetzen', click: () => resetWindowPosition() },
+    { label: 'Einstellungen …', click: () => openSettingsWindow() },
+    { type: 'separator' },
+    { label: withKey('Beenden', 'quitApp'), click: () => app.quit() }
+  ]));
+}
+
+// ---------------------------------------------------------------------------
+// Globale Hotkeys (funktionieren auch, während WoW im Vordergrund ist)
+// ---------------------------------------------------------------------------
+const hotkeyActions = {
+  toggleVisible: () => toggleVisible(),
+  quitApp: () => app.quit(),
+  toggleMaximize: () => toggleMaximize(),
+  toggleMini: () => toggleMini(),
+  playPause: () => playerCommand('playPause'),
+  seekBack: () => playerCommand('seekBack'),
+  seekForward: () => playerCommand('seekForward'),
+  mute: () => playerCommand('mute'),
+  clickThrough: () => setClickThrough(!clickThrough),
+  toggleBar: () => setBarVisible(!settings.state.barVisible),
+  cinema: () => playerCommand('cinema'),
+  opacityUp: () => setOpacity(settings.state.opacity + OPACITY_STEP),
+  opacityDown: () => setOpacity(settings.state.opacity - OPACITY_STEP),
+  shortsNext: () => shortsStep('next'),
+  shortsPrev: () => shortsStep('prev')
+};
+
+function registerHotkeys() {
+  failedHotkeys.length = 0;
+  for (const [name, action] of Object.entries(hotkeyActions)) {
+    const accel = settings.hotkeys[name];
+    if (!accel) continue; // leer = deaktiviert
+    let ok = false;
+    try {
+      ok = globalShortcut.register(accel, action);
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok) {
+      failedHotkeys.push(`${HOTKEY_LABELS[name] || name} (${accel})`);
+      console.warn(`Hotkey konnte nicht registriert werden: ${accel} (${name})`);
+    }
+  }
+}
+
+function suspendHotkeys() {
+  globalShortcut.unregisterAll();
+  hotkeysSuspended = true;
+}
+
+function resumeHotkeys() {
+  if (!hotkeysSuspended) return;
+  hotkeysSuspended = false;
+  registerHotkeys();
+  sendState({ hotkeysChanged: true });
+}
+
+// Prüft eine Tastenkombination: gültig? schon von einem anderen Programm belegt?
+function testAccelerator(accel) {
+  if (typeof accel !== 'string' || !accel) return { ok: false, reason: 'leer' };
+  let ok = false;
+  try {
+    ok = globalShortcut.register(accel, () => {});
+  } catch (_) {
+    return { ok: false, reason: 'ungueltig' };
+  }
+  if (ok) globalShortcut.unregister(accel);
+  return ok ? { ok: true } : { ok: false, reason: 'belegt' };
+}
+
+// ---------------------------------------------------------------------------
+// Einstellungsfenster (Hotkeys ändern)
+// ---------------------------------------------------------------------------
+function openSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show();
+    settingsWin.focus();
+    return;
+  }
+  // Mittig über dem Overlay platzieren
+  const width = 460;
+  const height = 760;
+  const ref = win ? win.getBounds() : screen.getPrimaryDisplay().workArea;
+  const bounds = fitToWorkArea({
+    x: ref.x + Math.round((ref.width - width) / 2),
+    y: ref.y + Math.round((ref.height - height) / 2),
+    width,
+    height
+  });
+
+  // Solange das Fenster offen ist, sind die globalen Hotkeys aus,
+  // damit man jede Kombination aufnehmen kann.
+  suspendHotkeys();
+
+  settingsWin = new BrowserWindow({
+    ...bounds,
+    parent: win || undefined,
+    icon: ICON_PATH,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    backgroundColor: '#0b0806',
+    title: 'Einstellungen – YouTube Overlay',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  settingsWin.setAlwaysOnTop(true, 'screen-saver');
+  settingsWin.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWin.once('ready-to-show', () => { settingsWin.show(); settingsWin.focus(); });
+  settingsWin.on('closed', () => {
+    settingsWin = null;
+    previewTheme = null;
+    sendState();
+    resumeHotkeys();
+  });
+}
+
+const isFromSettings = (event) => !!settingsWin && !settingsWin.isDestroyed() && event.sender === settingsWin.webContents;
+
+ipcMain.handle('hotkeys:get', (event) => {
+  if (!isFromSettings(event)) return null;
+  return {
+    hotkeys: settings.hotkeys,
+    defaults: DEFAULT_HOTKEYS,
+    labels: HOTKEY_LABELS,
+    options: { adblock: settings.state.adblock !== false, theme: settings.state.theme },
+    themes: THEMES
+  };
+});
+
+ipcMain.handle('hotkeys:test', (event, accel) => {
+  if (!isFromSettings(event)) return { ok: false, reason: 'ungueltig' };
+  return testAccelerator(accel);
+});
+
+ipcMain.handle('hotkeys:save', (event, map, options) => {
+  if (!isFromSettings(event)) return { ok: false, failed: [] };
+  if (options && typeof options.adblock === 'boolean' && options.adblock !== (settings.state.adblock !== false)) {
+    setAdblock(options.adblock);
+  }
+  if (options && THEME_IDS.has(options.theme)) {
+    settings.state.theme = options.theme;
+    previewTheme = null;
+    sendState();
+  }
+  settings.hotkeys = sanitizeHotkeys(map);
+  saveSettingsNow();
+  // Probeweise registrieren, um belegte Kombinationen zu melden;
+  // aktiv werden sie erst, wenn das Fenster geschlossen wird.
+  globalShortcut.unregisterAll();
+  registerHotkeys();
+  globalShortcut.unregisterAll();
+  return { ok: true, failed: [...failedHotkeys] };
+});
+
+ipcMain.on('theme:preview', (event, id) => {
+  if (!isFromSettings(event) || !THEME_IDS.has(id)) return;
+  previewTheme = id;
+  sendState();
+});
+
+ipcMain.on('settings:close', (event) => {
+  if (isFromSettings(event)) settingsWin.close();
+});
+
+// ---------------------------------------------------------------------------
+// IPC von der Steuerleiste
+// ---------------------------------------------------------------------------
+const fromBar = (event) => !!win && event.sender === win.webContents;
+
+ipcMain.on('navigate', (e, input) => { if (fromBar(e)) navigateInput(input); });
+ipcMain.on('home', (e) => {
+  if (!fromBar(e)) return;
+  if (activeTab === 'yt') navigate(HOME_URL);
+  else activeView().webContents.loadURL(START_PAGE).catch(() => {});
+});
+ipcMain.on('back', (e) => {
+  if (!fromBar(e)) return;
+  const h = activeView().webContents.navigationHistory;
+  if (h.canGoBack()) h.goBack();
+});
+ipcMain.on('reload', (e) => { if (fromBar(e)) activeView().webContents.reload(); });
+ipcMain.on('tab:new', (e) => { if (fromBar(e)) { createTab(START_PAGE, true); focusAddressBar(); } });
+ipcMain.on('tab:activate', (e, id) => { if (fromBar(e)) activateTab(id === 'yt' ? 'yt' : Number(id)); });
+ipcMain.on('tab:close', (e, id) => { if (fromBar(e)) closeTab(Number(id)); });
+ipcMain.on('set-opacity', (_e, value) => {
+  const v = Number(value);
+  if (Number.isFinite(v)) setOpacity(v);
+});
+ipcMain.on('toggle-click-through', () => setClickThrough(!clickThrough));
+ipcMain.on('toggle-bar', () => setBarVisible(!settings.state.barVisible));
+ipcMain.on('cinema', () => { activateTab('yt'); playerCommand('cinema'); });
+ipcMain.on('minimize', (e) => { if (fromBar(e)) toggleMini(); });
+ipcMain.on('play-pause', (e) => { if (fromBar(e)) playerCommand('playPause'); });
+ipcMain.on('toggle-maximize', () => toggleMaximize());
+ipcMain.on('hide', () => toggleVisible());
+ipcMain.on('close', () => { if (win) win.close(); });
+ipcMain.on('open-settings', () => openSettingsWindow());
+ipcMain.on('shorts', () => navigate(SHORTS_URL));
+
+// ---------------------------------------------------------------------------
+// App-Lebenszyklus
+// ---------------------------------------------------------------------------
+app.on('second-instance', () => {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
+
+app.whenReady().then(() => {
+  settings = loadSettings();
+  saveSettingsNow();
+  createWindow();
+  registerHotkeys();
+  createTray();
+});
+
+app.on('before-quit', () => {
+  if (win) rememberBounds();
+  saveSettingsNow();
+});
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (tray && !tray.isDestroyed()) tray.destroy();
+});
+
+app.on('window-all-closed', () => {
+  app.quit();
+});

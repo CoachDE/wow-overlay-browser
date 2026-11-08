@@ -1,0 +1,311 @@
+/* Formen & Stil der Designs (Farben stehen in themes.css).
+   "Gold" ist der Grundstil der Seiten selbst; hier stehen nur die Abweichungen.
+   Höhen von Leiste (36px) und Tab-Leiste (28px) bleiben in allen Designs gleich,
+   weil das Hauptprogramm die Seitenbereiche danach ausrichtet. */
+
+/* Gemeinsam: Zeichen-Emblem statt der Raute (wird pro Design gesetzt) */
+:root:not([data-theme="gold"]) .emblem svg { display: none; }
+:root:not([data-theme="gold"]) .emblem::before {
+  content: var(--glyph);
+  font: 17px "Segoe UI Symbol", "Segoe UI Emoji", sans-serif;
+  line-height: 1;
+  color: var(--gold-light);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--gold) 70%, transparent);
+}
+h1::before, h1::after { content: var(--orn) !important; }
+
+/* =====================================================================
+   FROST – Eis-Glas: runde Pillen, schwebende Tabs, kühles Leuchten
+   ===================================================================== */
+:root[data-theme="frost"] { --glyph: "❄"; --orn: "❄"; }
+:root[data-theme="frost"] body { letter-spacing: .2px; }
+:root[data-theme="frost"] body::after {
+  border: 1px solid color-mix(in srgb, var(--gold) 70%, transparent);
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 4px color-mix(in srgb, var(--gold) 12%, var(--ink));
+}
+:root[data-theme="frost"] #bar,
+:root[data-theme="frost"] body.mini #mini,
+:root[data-theme="frost"] header {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--stone-1) 85%, var(--gold) 15%), var(--stone-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+:root[data-theme="frost"] #bar::after,
+:root[data-theme="frost"] header::after {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-light), transparent);
+  box-shadow: 0 0 6px var(--gold);
+}
+:root[data-theme="frost"] :is(#bar, #mini, #tabs) button,
+:root[data-theme="frost"] .icon {
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+:root[data-theme="frost"] :is(#bar, #mini, #tabs) button:hover,
+:root[data-theme="frost"] .icon:hover {
+  background: color-mix(in srgb, var(--gold) 26%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--gold) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+:root[data-theme="frost"] :is(#bar, #mini) button.on {
+  background: linear-gradient(180deg, var(--red-light), var(--red));
+  border-color: var(--gold-light);
+}
+:root[data-theme="frost"] input[type=text],
+:root[data-theme="frost"] .key {
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--field) 80%, var(--gold) 6%);
+  border-color: color-mix(in srgb, var(--gold) 40%, transparent);
+}
+:root[data-theme="frost"] #tabs { align-items: center; gap: 4px; }
+:root[data-theme="frost"] #tabList { align-items: center; gap: 4px; }
+:root[data-theme="frost"] .tab {
+  height: 21px; border-radius: 11px; border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+  background: color-mix(in srgb, var(--gold) 7%, transparent);
+}
+:root[data-theme="frost"] .tab.active {
+  background: color-mix(in srgb, var(--gold) 22%, transparent);
+  border-color: var(--gold-light);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 50%, transparent);
+}
+:root[data-theme="frost"] .tab.active::before { display: none; }
+:root[data-theme="frost"] .tab .x { border-radius: 50%; }
+:root[data-theme="frost"] .btn { border-radius: 15px; }
+:root[data-theme="frost"] .theme-card { border-radius: 10px; }
+
+/* =====================================================================
+   SMARAGD – Natur/Druide: runde Knöpfe, Blatt-Tabs, Punkt-Ranken
+   ===================================================================== */
+:root[data-theme="emerald"] { --glyph: "✿"; --orn: "✿"; }
+:root[data-theme="emerald"] body::after {
+  border: 1px solid var(--gold-dark);
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 2px var(--gold), inset 0 0 0 4px var(--ink);
+}
+:root[data-theme="emerald"] #bar,
+:root[data-theme="emerald"] body.mini #mini,
+:root[data-theme="emerald"] header {
+  background:
+    radial-gradient(ellipse at 15% 120%, color-mix(in srgb, var(--gold) 14%, transparent), transparent 60%),
+    radial-gradient(ellipse at 85% -30%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 55%),
+    linear-gradient(180deg, var(--stone-1), var(--stone-2));
+}
+:root[data-theme="emerald"] #bar::after,
+:root[data-theme="emerald"] header::after {
+  height: 3px; left: 8px; right: 8px;
+  background: radial-gradient(circle, var(--gold) 1.1px, transparent 1.6px) 0 50% / 9px 3px repeat-x;
+}
+:root[data-theme="emerald"] :is(#bar, #mini, #tabs) button,
+:root[data-theme="emerald"] .icon {
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--btn-1), var(--btn-2) 75%);
+}
+:root[data-theme="emerald"] :is(#bar, #mini, #tabs) button.on {
+  background: radial-gradient(circle at 35% 30%, var(--red-light), var(--red) 80%);
+}
+:root[data-theme="emerald"] input[type=text],
+:root[data-theme="emerald"] .key { border-radius: 12px 3px 12px 3px; }
+:root[data-theme="emerald"] .tab { border-radius: 14px 3px 0 0; padding-left: 10px; }
+:root[data-theme="emerald"] .tab.active::before { left: 12px; right: 12px; }
+:root[data-theme="emerald"] .tab .title,
+:root[data-theme="emerald"] h1,
+:root[data-theme="emerald"] .section { font-style: italic; }
+:root[data-theme="emerald"] .tab .x { border-radius: 50%; }
+:root[data-theme="emerald"] .btn { border-radius: 14px 4px 14px 4px; }
+:root[data-theme="emerald"] .theme-card { border-radius: 12px 3px 12px 3px; }
+
+/* =====================================================================
+   ARKAN – Runen-Neon: abgeschnittene Ecken, schräge Tabs, Leuchtlinien
+   ===================================================================== */
+:root[data-theme="arcane"] { --glyph: "✦"; --orn: "✦"; }
+:root[data-theme="arcane"] body::after {
+  border: 1px solid var(--gold);
+  box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 6px 2px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+:root[data-theme="arcane"] #bar,
+:root[data-theme="arcane"] body.mini #mini,
+:root[data-theme="arcane"] header {
+  background:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold) 9%, transparent) 50%, transparent),
+    linear-gradient(180deg, var(--stone-1), var(--stone-2));
+}
+:root[data-theme="arcane"] #bar::after,
+:root[data-theme="arcane"] header::after {
+  height: 1px; left: 0; right: 0;
+  background: var(--gold-light);
+  box-shadow: 0 0 4px var(--gold), 0 0 10px var(--gold);
+}
+:root[data-theme="arcane"] :is(#bar, #mini, #tabs) button,
+:root[data-theme="arcane"] .icon,
+:root[data-theme="arcane"] .btn {
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  background: linear-gradient(135deg, var(--btn-1), var(--btn-2));
+  border-color: var(--gold);
+}
+:root[data-theme="arcane"] :is(#bar, #mini, #tabs) button:hover,
+:root[data-theme="arcane"] .icon:hover {
+  background: color-mix(in srgb, var(--gold) 30%, var(--btn-2));
+  color: #fff;
+  filter: drop-shadow(0 0 4px var(--gold));
+}
+:root[data-theme="arcane"] :is(#bar, #mini) button.on {
+  background: linear-gradient(135deg, var(--red-light), var(--red));
+}
+:root[data-theme="arcane"] input[type=text],
+:root[data-theme="arcane"] .key {
+  border-radius: 0;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  border-color: var(--gold);
+}
+:root[data-theme="arcane"] #tabs { padding-left: 12px; gap: 6px; }
+:root[data-theme="arcane"] #tabList { gap: 6px; padding-left: 4px; }
+:root[data-theme="arcane"] .tab {
+  transform: skewX(-18deg);
+  border-radius: 0;
+  border: 1px solid var(--gold-dark); border-bottom: none;
+}
+:root[data-theme="arcane"] .tab > * { transform: skewX(18deg); }
+:root[data-theme="arcane"] .tab.active {
+  border-color: var(--gold-light);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--gold) 60%, transparent), inset 0 0 8px color-mix(in srgb, var(--gold) 25%, transparent);
+}
+:root[data-theme="arcane"] .tab.active::before { height: 1px; background: var(--gold-light); box-shadow: 0 0 6px var(--gold); }
+:root[data-theme="arcane"] .tab .title,
+:root[data-theme="arcane"] .section,
+:root[data-theme="arcane"] h1 { text-transform: uppercase; letter-spacing: 1.5px; font-size: 11px; }
+:root[data-theme="arcane"] h1 { font-size: 15px; letter-spacing: 3px; }
+:root[data-theme="arcane"] .switch,
+:root[data-theme="arcane"] .switch::after { border-radius: 0; }
+:root[data-theme="arcane"] .theme-card { border-radius: 0; clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+
+/* =====================================================================
+   BLUT – Schmiede-Eisen: eckig, dicke Ränder, Nieten, gekerbte Tabs
+   ===================================================================== */
+:root[data-theme="blood"] { --glyph: "⚔"; --orn: "⚔"; }
+:root[data-theme="blood"] body::after {
+  border: 2px solid var(--gold-dark);
+  box-shadow: inset 0 0 0 1px #000, inset 0 0 0 2px color-mix(in srgb, var(--gold) 40%, transparent);
+}
+:root[data-theme="blood"] #bar,
+:root[data-theme="blood"] body.mini #mini,
+:root[data-theme="blood"] header {
+  background:
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.22) 0 3px, transparent 3px 7px),
+    linear-gradient(180deg, var(--stone-1), var(--stone-2));
+}
+:root[data-theme="blood"] #bar::after,
+:root[data-theme="blood"] header::after {
+  height: 3px; left: 0; right: 0;
+  background:
+    radial-gradient(circle, var(--gold) 1px, transparent 1.4px) 4px 50% / 24px 3px repeat-x,
+    linear-gradient(180deg, var(--gold-dark), #000);
+}
+:root[data-theme="blood"] :is(#bar, #mini, #tabs) button,
+:root[data-theme="blood"] .icon,
+:root[data-theme="blood"] .btn {
+  border-radius: 0;
+  border: 2px solid var(--gold-dark);
+  background:
+    radial-gradient(circle at 3px 3px, var(--gold) 0.9px, transparent 1.4px),
+    radial-gradient(circle at calc(100% - 3px) 3px, var(--gold) 0.9px, transparent 1.4px),
+    radial-gradient(circle at 3px calc(100% - 3px), var(--gold) 0.9px, transparent 1.4px),
+    radial-gradient(circle at calc(100% - 3px) calc(100% - 3px), var(--gold) 0.9px, transparent 1.4px),
+    linear-gradient(180deg, var(--btn-1), var(--btn-2));
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="blood"] :is(#bar, #mini) button.on {
+  background: linear-gradient(180deg, var(--red-light), var(--red));
+  border-color: var(--gold-light);
+}
+:root[data-theme="blood"] input[type=text],
+:root[data-theme="blood"] .key {
+  border-radius: 0; border-width: 2px;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.9);
+}
+:root[data-theme="blood"] .tab {
+  border-radius: 0; border-width: 2px;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%, 0 7px);
+}
+:root[data-theme="blood"] .tab.active { background: linear-gradient(180deg, var(--red), var(--stone-2)); color: var(--on-color); }
+:root[data-theme="blood"] .tab .title,
+:root[data-theme="blood"] .section,
+:root[data-theme="blood"] h1,
+:root[data-theme="blood"] .btn { text-transform: uppercase; font-weight: 700; letter-spacing: .8px; }
+:root[data-theme="blood"] .tab .title { font-size: 11px; }
+:root[data-theme="blood"] .switch,
+:root[data-theme="blood"] .switch::after { border-radius: 0; }
+:root[data-theme="blood"] .theme-card { border-radius: 0; border-width: 2px; }
+
+/* =====================================================================
+   SCHLICHT – modern & flach: keine Rahmen, Unterstrich-Tabs
+   ===================================================================== */
+:root[data-theme="plain"] { --glyph: "▶"; --orn: ""; }
+:root[data-theme="plain"] .emblem::before {
+  font-size: 9px; color: #fff; text-shadow: none;
+  background: var(--red-light); border-radius: 5px; padding: 4px 6px 4px 7px;
+}
+:root[data-theme="plain"] h1::before,
+:root[data-theme="plain"] h1::after { display: none; }
+:root[data-theme="plain"] h1 { text-shadow: none; font-weight: 600; color: var(--text); }
+:root[data-theme="plain"] body::after { border: 1px solid #333; box-shadow: none; }
+:root[data-theme="plain"] #bar,
+:root[data-theme="plain"] body.mini #mini,
+:root[data-theme="plain"] header,
+:root[data-theme="plain"] footer { background: var(--stone-1); box-shadow: none; }
+:root[data-theme="plain"] #bar::after,
+:root[data-theme="plain"] header::after { height: 1px; left: 0; right: 0; background: #2f2f2f; }
+:root[data-theme="plain"] footer { border-top-color: #2f2f2f; }
+:root[data-theme="plain"] :is(#bar, #mini, #tabs) button,
+:root[data-theme="plain"] .icon {
+  border: none; border-radius: 6px; background: transparent; box-shadow: none; color: var(--text);
+}
+:root[data-theme="plain"] :is(#bar, #mini, #tabs) button:hover,
+:root[data-theme="plain"] .icon:hover { background: rgba(255, 255, 255, 0.1); box-shadow: none; color: #fff; }
+:root[data-theme="plain"] :is(#bar, #mini) button.on { background: var(--red); color: #fff; box-shadow: none; }
+:root[data-theme="plain"] :is(#bar, #mini, #tabs) button:disabled { background: transparent; color: #4a4a4a; }
+:root[data-theme="plain"] .sep { display: none; }
+:root[data-theme="plain"] input[type=text],
+:root[data-theme="plain"] .key {
+  border: 1px solid transparent; border-radius: 16px; background: #2a2a2a; box-shadow: none;
+}
+:root[data-theme="plain"] input[type=text]:focus { border-color: #555; box-shadow: none; }
+:root[data-theme="plain"] input[type=range]::-webkit-slider-thumb { border-radius: 50%; width: 12px; height: 12px; background: #fff; box-shadow: none; }
+:root[data-theme="plain"] input[type=range] { border: none; height: 4px; background: #3a3a3a; box-shadow: none; }
+:root[data-theme="plain"] #tabs { background: var(--stone-2); }
+:root[data-theme="plain"] .tab {
+  border: none; border-radius: 0; background: transparent; height: 26px;
+  border-bottom: 2px solid transparent;
+}
+:root[data-theme="plain"] .tab:hover { background: rgba(255, 255, 255, 0.06); }
+:root[data-theme="plain"] .tab.active { background: transparent; box-shadow: none; color: #fff; border-bottom-color: var(--red-light); }
+:root[data-theme="plain"] .tab.active::before { display: none; }
+:root[data-theme="plain"] .section { border-bottom: none; color: var(--muted); letter-spacing: .5px; font-size: 11px; }
+:root[data-theme="plain"] .row { border-bottom-color: #242424; }
+:root[data-theme="plain"] .btn { border-radius: 6px; box-shadow: none; }
+:root[data-theme="plain"] .btn.primary { background: var(--red-light); border-color: var(--red-light); color: #fff; text-shadow: none; }
+:root[data-theme="plain"] .theme-card { border-radius: 8px; }
+
+/* Hauptknopf "Speichern" behält in jedem Design seine Akzent-Füllung */
+:root[data-theme="arcane"] .btn.primary,
+:root[data-theme="blood"] .btn.primary {
+  background: linear-gradient(180deg, var(--gold-light), var(--gold) 55%, var(--gold-dark));
+  color: var(--primary-text);
+}
+
+/* Gold: Ornament der Überschrift */
+:root, :root[data-theme="gold"] { --orn: "◆"; --glyph: ""; }
+
+/* Vorschau-Karten in den Einstellungen zeigen die Knopfform ihres Designs */
+.theme-card[data-theme="frost"] .mock-btn { border-radius: 6px; }
+.theme-card[data-theme="emerald"] .mock-btn { border-radius: 50%; }
+.theme-card[data-theme="arcane"] .mock-btn { clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px); border-radius: 0; }
+.theme-card[data-theme="arcane"] .mock-bar { border-bottom-width: 1px; box-shadow: 0 1px 6px var(--gold); }
+.theme-card[data-theme="blood"] .mock-btn { border-width: 2px; border-radius: 0; }
+.theme-card[data-theme="blood"] .mock-bar { border-bottom-width: 3px; border-bottom-color: var(--gold-dark); }
+.theme-card[data-theme="plain"] .mock-btn { border: none; background: #444; border-radius: 3px; }
+.theme-card[data-theme="plain"] .mock-btn.on { background: var(--red-light); }
+.theme-card[data-theme="plain"] .mock-bar { border-bottom: 1px solid #333; }
+.theme-card[data-theme="plain"] .mock-dia { transform: none; border: none; background: var(--red-light); border-radius: 2px; }
+.theme-card[data-theme="emerald"] .mock-dia { border-radius: 50%; transform: none; }

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Einstellungen – YouTube Overlay</title>
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="designs.css">
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: radial-gradient(ellipse at 50% 0%, var(--panel-glow), var(--ink) 70%);
+      color: var(--text);
+      font: 13px var(--font);
+      overflow: hidden; user-select: none;
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none;
+      border: 1px solid var(--gold);
+      box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 2px var(--gold-dark), inset 0 0 0 4px var(--ink);
+    }
+    .wrap { display: flex; flex-direction: column; height: 100%; padding: 4px; }
+
+    header {
+      position: relative; height: 44px; flex: none;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(180deg, var(--stone-1), var(--stone-2));
+      -webkit-app-region: drag;
+    }
+    header::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold-dark) 8%, var(--gold-light) 50%, var(--gold-dark) 92%, transparent);
+    }
+    h1 {
+      margin: 0; font-size: 17px; font-weight: normal; letter-spacing: 1px;
+      color: var(--gold-light); text-shadow: 0 0 6px color-mix(in srgb, var(--gold) 45%, transparent), 0 1px 0 #000;
+    }
+    h1::before, h1::after { content: "◆"; font-size: 9px; color: var(--gold); margin: 0 10px; vertical-align: 3px; }
+    #btnX {
+      position: absolute; right: 8px; top: 9px; -webkit-app-region: no-drag;
+    }
+
+    .section {
+      flex: none; margin: 12px 16px 2px; padding-bottom: 3px;
+      color: var(--gold); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+      border-bottom: 1px solid color-mix(in srgb, var(--gold-dark) 50%, transparent);
+    }
+    /* Design-Karten: jede Karte zeigt sich in ihrem eigenen Design (data-theme auf der Karte) */
+    .themes {
+      flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      margin: 8px 14px 2px;
+    }
+    .theme-card {
+      position: relative; cursor: pointer; overflow: hidden;
+      border: 1px solid var(--gold-dark); border-radius: var(--radius);
+      background: var(--ink); font: 12px var(--font); color: var(--text);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    }
+    .theme-card .mock-bar {
+      height: 18px; display: flex; align-items: center; gap: 4px; padding: 0 5px;
+      background: linear-gradient(180deg, var(--stone-1), var(--stone-2));
+      border-bottom: 2px solid var(--gold);
+    }
+    .theme-card .mock-dia { width: 8px; height: 8px; transform: rotate(45deg); border: 1px solid var(--gold); background: var(--btn-2); }
+    .theme-card .mock-btn { width: 10px; height: 10px; border: 1px solid var(--gold-dark); border-radius: 2px; background: var(--btn-1); }
+    .theme-card .mock-btn.on { background: var(--red-light); border-color: var(--gold-light); }
+    .theme-card .mock-field { flex: 1; height: 8px; border: 1px solid var(--gold-dark); background: var(--field); border-radius: 2px; }
+    .theme-card .name { padding: 6px 7px 7px; color: var(--gold-light); letter-spacing: .5px; }
+    .theme-card:hover { border-color: var(--gold); }
+    .theme-card.selected {
+      border-color: var(--gold-light);
+      box-shadow: 0 0 0 1px var(--gold-light), 0 0 10px color-mix(in srgb, var(--gold) 60%, transparent);
+    }
+    .theme-card.selected .name::after { content: " ✓"; }
+    .toggle {
+      flex: none; display: flex; align-items: center; gap: 10px;
+      margin: 4px 12px 0; padding: 6px 4px; cursor: pointer;
+    }
+    .toggle-text { flex: 1; font-size: 13px; }
+    .toggle-text small { display: block; color: var(--muted); font-size: 11px; font-style: italic; margin-top: 2px; }
+    .toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .switch {
+      position: relative; width: 40px; height: 20px; flex: none; border-radius: 10px;
+      background: var(--field); border: 1px solid var(--gold-dark);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8); transition: background .15s;
+    }
+    .switch::after {
+      content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+      background: linear-gradient(180deg, var(--switch-off-1), var(--switch-off-2)); transition: left .15s, background .15s;
+    }
+    .toggle input:checked + .switch { background: linear-gradient(180deg, var(--switch-on-1), var(--switch-on-2)); border-color: var(--gold); }
+    .toggle input:checked + .switch::after {
+      left: 22px; background: linear-gradient(180deg, var(--gold-light), var(--gold-dark));
+      box-shadow: 0 0 6px color-mix(in srgb, var(--gold-light) 70%, transparent);
+    }
+    .toggle:hover .switch { border-color: var(--gold); }
+    .hint { flex: none; padding: 6px 16px 6px; color: var(--muted); font-size: 12px; font-style: italic; line-height: 1.4; }
+
+    .list { flex: 1; overflow-y: auto; padding: 2px 12px 8px; }
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 4px; }
+    .row {
+      display: grid; grid-template-columns: 1fr 150px 26px; align-items: center; gap: 6px;
+      padding: 5px 4px; border-bottom: 1px solid color-mix(in srgb, var(--gold-dark) 25%, transparent);
+    }
+    .row .label { font-size: 13px; }
+    .row .note { grid-column: 1 / -1; font-size: 11px; font-style: italic; padding-left: 2px; display: none; }
+    .row .note.show { display: block; }
+    .note.warn { color: var(--danger-light); }
+    .note.info { color: var(--gold); }
+
+    button {
+      font: inherit; color: var(--gold); cursor: pointer;
+      background: linear-gradient(180deg, var(--btn-1), var(--btn-2));
+      border: 1px solid var(--gold-dark); border-radius: 3px;
+      box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-light) 15%, transparent), 0 1px 2px rgba(0, 0, 0, 0.6);
+      transition: border-color .12s, color .12s, box-shadow .12s;
+    }
+    button:hover { color: var(--gold-light); border-color: var(--gold); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--gold-light) 25%, transparent), 0 0 6px color-mix(in srgb, var(--gold) 45%, transparent); }
+    .key {
+      height: 26px; padding: 0 6px; font-size: 12px; color: var(--text);
+      background: var(--field); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .key.empty { color: var(--key-empty); font-style: italic; }
+    .key.recording {
+      color: var(--gold-light); border-color: var(--gold-light);
+      box-shadow: inset 0 2px 4px rgba(0,0,0,.8), 0 0 8px color-mix(in srgb, var(--gold-light) 60%, transparent);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    .key.bad { border-color: var(--danger-light); }
+    @keyframes pulse { 50% { box-shadow: inset 0 2px 4px rgba(0,0,0,.8), 0 0 2px color-mix(in srgb, var(--gold-light) 20%, transparent); } }
+    .icon { width: 26px; height: 26px; padding: 0; display: grid; place-items: center; }
+    .icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+    .icon:hover.clear, #btnX:hover { color: var(--on-color); background: linear-gradient(180deg, var(--danger-light), var(--danger)); }
+
+    footer {
+      flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px;
+      background: linear-gradient(0deg, var(--stone-1), var(--stone-2));
+      border-top: 1px solid var(--gold-dark);
+    }
+    footer .grow { flex: 1; }
+    .btn { height: 30px; padding: 0 14px; }
+    .btn.primary {
+      color: var(--primary-text); border-color: var(--gold-light);
+      background: linear-gradient(180deg, var(--gold-light), var(--gold) 55%, var(--gold-dark));
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    .btn.primary:hover { color: #000; box-shadow: 0 0 10px color-mix(in srgb, var(--gold-light) 60%, transparent); }
+    #msg { padding: 0 16px 8px; min-height: 22px; font-size: 12px; flex: none; }
+    #msg.warn { color: var(--danger-light); }
+    #msg.ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Einstellungen</h1>
+      <button id="btnX" class="icon" title="Schließen ohne Speichern (Esc)">
+        <svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
+      </button>
+    </header>
+    <div class="section">Design</div>
+    <div class="themes" id="themes"></div>
+    <div class="section">Allgemein</div>
+    <label class="toggle" for="optAdblock">
+      <span class="toggle-text">
+        Werbeblocker
+        <small>Blockiert YouTube-Werbung und überspringt Werbeclips automatisch</small>
+      </span>
+      <input type="checkbox" id="optAdblock">
+      <span class="switch"></span>
+    </label>
+    <div class="section">Hotkeys</div>
+    <div class="hint">
+      Auf eine Taste klicken und die neue Kombination drücken (z.&nbsp;B. Strg + Alt + Taste).
+      Esc bricht ab. Die Hotkeys funktionieren überall, auch während WoW aktiv ist.
+    </div>
+    <div class="list" id="list"></div>
+    <div id="msg"></div>
+    <footer>
+      <button class="btn" id="btnDefaults">Standard</button>
+      <div class="grow"></div>
+      <button class="btn" id="btnCancel">Abbrechen</button>
+      <button class="btn primary" id="btnSave">Speichern</button>
+    </footer>
+  </div>
+  <script src="keys.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+{
+  "name": "youtube-overlay",
+  "productName": "YouTube Overlay",
+  "version": "1.0.0",
+  "description": "YouTube-Overlay mit Browser-Tabs, Werbeblocker und Hotkeys, das über World of Warcraft liegt.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable --x64"
+  },
+  "license": "MIT",
+  "build": {
+    "appId": "local.youtube-overlay",
+    "productName": "YouTube Overlay",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "bar.html",
+      "bar.js",
+      "keys.js",
+      "adblock.js",
+      "themes.css",
+      "designs.css",
+      "settings.html",
+      "settings.js",
+      "icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.png"
+    },
+    "portable": {
+      "artifactName": "YouTube-Overlay.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "2.20.3"
+  },
+  "author": "CoachDE",
+  "homepage": "https://github.com/CoachDE/wow-overlay-browser",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CoachDE/wow-overlay-browser.git"
+  }
+}

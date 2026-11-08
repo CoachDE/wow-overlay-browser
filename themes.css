@@ -1,0 +1,244 @@
+/* Designs für das Overlay und das Einstellungsfenster.
+   Jedes Design setzt nur Variablen; die Seiten nutzen ausschließlich diese Variablen.
+   Die Selektoren gelten für jedes Element mit data-theme, damit die Vorschaukarten
+   in den Einstellungen ihr eigenes Design zeigen können. */
+
+:root, [data-theme="gold"] {
+  --font: Georgia, "Palatino Linotype", "Book Antiqua", serif;
+  --radius: 3px;
+  --gold: #d4a94e;        /* Akzent */
+  --gold-light: #f3d68a;  /* Akzent hell */
+  --gold-dark: #7a5a22;   /* Akzent dunkel / Rahmen */
+  --stone-1: #2b2219;     /* Leiste oben */
+  --stone-2: #17110c;     /* Leiste unten */
+  --ink: #0b0806;         /* Hintergrund */
+  --text: #f0e2bd;
+  --muted: #a8946a;
+  --red: #b3261e;         /* aktiv (dunkel) */
+  --red-light: #e2483c;   /* aktiv (hell) */
+  --danger: #b3261e;
+  --danger-light: #e2483c;
+  --on-color: #fff4d6;    /* Schrift auf aktiv/Gefahr */
+  --field: #120d09;
+  --btn-1: #3a2d1f;
+  --btn-2: #1c150e;
+  --btn-active: #2e2318;
+  --tab-1: #2a2017;
+  --tab-2: #1a130d;
+  --tab-h1: #33271b;
+  --tab-h2: #1f170f;
+  --tab-a1: #3d2e1e;
+  --disabled: #5a4a32;
+  --disabled-border: #3b2e1c;
+  --status-1: #3b1512;
+  --status-2: #220b09;
+  --panel-glow: #241b13;
+  --switch-off-1: #8a7550;
+  --switch-off-2: #4a3c25;
+  --switch-on-1: #5a2a10;
+  --switch-on-2: #3a1a08;
+  --key-empty: #6b5a3e;
+  --primary-text: #1a1208;
+  --emblem-play: #e2483c;
+  --ok: #8fbf5a;
+}
+
+[data-theme="frost"] {
+  --font: "Segoe UI Semilight", "Segoe UI", sans-serif;
+  --radius: 3px;
+  --gold: #8fcaf5;
+  --gold-light: #e0f3ff;
+  --gold-dark: #3b6687;
+  --stone-1: #1c2a37;
+  --stone-2: #0f1922;
+  --ink: #060b10;
+  --text: #e4f1fa;
+  --muted: #86a2b7;
+  --red: #2a6fae;
+  --red-light: #4c9be0;
+  --danger: #a3302a;
+  --danger-light: #d9524a;
+  --on-color: #f2faff;
+  --field: #0a121a;
+  --btn-1: #24384a;
+  --btn-2: #111c27;
+  --btn-active: #1a2b3a;
+  --tab-1: #192836;
+  --tab-2: #0f1821;
+  --tab-h1: #213444;
+  --tab-h2: #131f2a;
+  --tab-a1: #28405a;
+  --disabled: #3d5466;
+  --disabled-border: #22313d;
+  --status-1: #13283b;
+  --status-2: #0a1621;
+  --panel-glow: #15222e;
+  --switch-off-1: #6d8597;
+  --switch-off-2: #3a4a57;
+  --switch-on-1: #1d4a6e;
+  --switch-on-2: #0f2c44;
+  --key-empty: #4a6273;
+  --primary-text: #0b1a26;
+  --emblem-play: #6fc0ff;
+  --ok: #7fd1c4;
+}
+
+[data-theme="emerald"] {
+  --font: Georgia, "Palatino Linotype", serif;
+  --radius: 3px;
+  --gold: #79cf62;
+  --gold-light: #c8f5a6;
+  --gold-dark: #2f6a25;
+  --stone-1: #19261a;
+  --stone-2: #0d160d;
+  --ink: #050a05;
+  --text: #e2f4d6;
+  --muted: #8ba67d;
+  --red: #2f7f25;
+  --red-light: #58b847;
+  --danger: #a3302a;
+  --danger-light: #d9524a;
+  --on-color: #f2ffe9;
+  --field: #091208;
+  --btn-1: #24381f;
+  --btn-2: #111b0f;
+  --btn-active: #1a2a16;
+  --tab-1: #1a2817;
+  --tab-2: #0f180d;
+  --tab-h1: #22341e;
+  --tab-h2: #131f11;
+  --tab-a1: #2c4426;
+  --disabled: #3f5636;
+  --disabled-border: #223019;
+  --status-1: #2e1a12;
+  --status-2: #1a0d08;
+  --panel-glow: #15231a;
+  --switch-off-1: #6f8a63;
+  --switch-off-2: #3a4a33;
+  --switch-on-1: #22501a;
+  --switch-on-2: #12300e;
+  --key-empty: #4c6343;
+  --primary-text: #0b1a08;
+  --emblem-play: #8ef06f;
+  --ok: #a4e07c;
+}
+
+[data-theme="arcane"] {
+  --font: Bahnschrift, "Segoe UI", sans-serif;
+  --radius: 4px;
+  --gold: #c18cff;
+  --gold-light: #ecd8ff;
+  --gold-dark: #5a3a88;
+  --stone-1: #24183a;
+  --stone-2: #140d22;
+  --ink: #090512;
+  --text: #efe4ff;
+  --muted: #9f8bbd;
+  --red: #7a34c4;
+  --red-light: #a965f2;
+  --danger: #a3264d;
+  --danger-light: #e04a7c;
+  --on-color: #fbf5ff;
+  --field: #0e0919;
+  --btn-1: #34244f;
+  --btn-2: #191127;
+  --btn-active: #251a3a;
+  --tab-1: #22173a;
+  --tab-2: #150e24;
+  --tab-h1: #2b1e48;
+  --tab-h2: #1a112c;
+  --tab-a1: #3a2860;
+  --disabled: #4f4069;
+  --disabled-border: #2b2140;
+  --status-1: #301638;
+  --status-2: #1b0b21;
+  --panel-glow: #21153a;
+  --switch-off-1: #7f6c9d;
+  --switch-off-2: #423657;
+  --switch-on-1: #4a2380;
+  --switch-on-2: #2b134d;
+  --key-empty: #5b4c76;
+  --primary-text: #1a0d2c;
+  --emblem-play: #ff6fd8;
+  --ok: #9fe0c4;
+}
+
+[data-theme="blood"] {
+  --font: "Bahnschrift SemiBold Condensed", Bahnschrift, "Arial Narrow", sans-serif;
+  --radius: 2px;
+  --gold: #d9584a;
+  --gold-light: #ffb3a6;
+  --gold-dark: #7a2018;
+  --stone-1: #2e1412;
+  --stone-2: #190a09;
+  --ink: #0c0404;
+  --text: #f6ddd7;
+  --muted: #b08880;
+  --red: #9e1c14;
+  --red-light: #d8392c;
+  --danger: #9e1c14;
+  --danger-light: #d8392c;
+  --on-color: #fff1ec;
+  --field: #140707;
+  --btn-1: #451c18;
+  --btn-2: #1f0b0a;
+  --btn-active: #33130f;
+  --tab-1: #2c1311;
+  --tab-2: #1a0908;
+  --tab-h1: #381714;
+  --tab-h2: #200c0a;
+  --tab-a1: #4a1d18;
+  --disabled: #64403b;
+  --disabled-border: #3a1d19;
+  --status-1: #4a1210;
+  --status-2: #2a0807;
+  --panel-glow: #2a0f0d;
+  --switch-off-1: #93716b;
+  --switch-off-2: #4f3531;
+  --switch-on-1: #6b1810;
+  --switch-on-2: #400d08;
+  --key-empty: #6f4a44;
+  --primary-text: #1e0605;
+  --emblem-play: #ff4a3a;
+  --ok: #e6b45a;
+}
+
+[data-theme="plain"] {
+  --font: "Segoe UI", system-ui, sans-serif;
+  --radius: 6px;
+  --gold: #bdbdbd;
+  --gold-light: #ffffff;
+  --gold-dark: #3d3d3d;
+  --stone-1: #222222;
+  --stone-2: #1b1b1b;
+  --ink: #0f0f0f;
+  --text: #f1f1f1;
+  --muted: #9a9a9a;
+  --red: #cc0000;
+  --red-light: #ff3b3b;
+  --danger: #c42b1c;
+  --danger-light: #e8483a;
+  --on-color: #ffffff;
+  --field: #121212;
+  --btn-1: #2c2c2c;
+  --btn-2: #242424;
+  --btn-active: #1e1e1e;
+  --tab-1: #222222;
+  --tab-2: #1c1c1c;
+  --tab-h1: #2b2b2b;
+  --tab-h2: #222222;
+  --tab-a1: #333333;
+  --disabled: #555555;
+  --disabled-border: #2e2e2e;
+  --status-1: #3a1d1d;
+  --status-2: #2a1414;
+  --panel-glow: #1d1d1d;
+  --switch-off-1: #8a8a8a;
+  --switch-off-2: #555555;
+  --switch-on-1: #8f0000;
+  --switch-on-2: #6a0000;
+  --key-empty: #5e5e5e;
+  --primary-text: #111111;
+  --emblem-play: #ff3b3b;
+  --ok: #7cc47c;
+}
