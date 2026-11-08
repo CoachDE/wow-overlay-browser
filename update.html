@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="designs.css">
+  <title>Update – YouTube Overlay</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden; user-select: none;
+      background: radial-gradient(ellipse at 50% 0%, var(--panel-glow), var(--ink) 75%);
+      color: var(--text); font: 13px var(--font);
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none;
+      border: 1px solid var(--gold);
+      box-shadow: inset 0 0 0 1px var(--ink), inset 0 0 0 2px var(--gold-dark), inset 0 0 0 4px var(--ink);
+    }
+    .wrap { height: 100%; display: flex; flex-direction: column; padding: 4px; }
+    header {
+      position: relative; height: 40px; flex: none;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: linear-gradient(180deg, var(--stone-1), var(--stone-2));
+      -webkit-app-region: drag;
+    }
+    header::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold-dark) 8%, var(--gold-light) 50%, var(--gold-dark) 92%, transparent);
+    }
+    h1 {
+      margin: 0; font-size: 16px; font-weight: normal; letter-spacing: 1px;
+      color: var(--gold-light); text-shadow: 0 0 6px color-mix(in srgb, var(--gold) 45%, transparent), 0 1px 0 #000;
+    }
+    h1::before, h1::after { content: "◆"; font-size: 9px; color: var(--gold); margin: 0 10px; vertical-align: 3px; }
+    main { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 12px 22px; text-align: center; }
+    .versions { font-size: 14px; }
+    .versions b { color: var(--gold-light); font-weight: normal; }
+    .arrow { color: var(--gold); margin: 0 8px; }
+    .hint { color: var(--muted); font-size: 12px; font-style: italic; min-height: 16px; }
+    .hint.warn { color: var(--danger-light); font-style: normal; }
+    .progress {
+      height: 12px; border-radius: 6px; overflow: hidden; display: none;
+      background: var(--field); border: 1px solid var(--gold-dark);
+      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+    .progress .fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(180deg, var(--gold-light), var(--gold) 60%, var(--gold-dark));
+      box-shadow: 0 0 8px color-mix(in srgb, var(--gold) 60%, transparent);
+      transition: width .2s;
+    }
+    footer { flex: none; display: flex; justify-content: center; padding: 0 22px 16px; }
+    button {
+      font: inherit; font-size: 14px; height: 36px; padding: 0 22px; cursor: pointer;
+      color: var(--primary-text); border: 1px solid var(--gold-light); border-radius: var(--radius);
+      background: linear-gradient(180deg, var(--gold-light), var(--gold) 55%, var(--gold-dark));
+      box-shadow: 0 0 10px color-mix(in srgb, var(--gold) 45%, transparent);
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    button:hover { box-shadow: 0 0 16px color-mix(in srgb, var(--gold-light) 70%, transparent); }
+    button:disabled { opacity: .55; cursor: default; box-shadow: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header><h1>Neue Version verfügbar</h1></header>
+    <main>
+      <div class="versions">
+        Version <b id="current">–</b><span class="arrow">➜</span>Version <b id="latest">–</b>
+      </div>
+      <div class="progress" id="progress"><div class="fill" id="fill"></div></div>
+      <div class="hint" id="hint">Das Overlay wird danach automatisch neu gestartet.</div>
+    </main>
+    <footer>
+      <button id="btnUpdate">⬇ Jetzt herunterladen und neu starten</button>
+    </footer>
+  </div>
+  <script src="update-popup.js"></script>
+</body>
+</html>

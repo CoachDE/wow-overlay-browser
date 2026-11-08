@@ -110,6 +110,18 @@
     }
     .range-row #optFocusOpacityValue { width: 38px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
     .range-row.disabled { opacity: .45; }
+    /* Version + Update-Status */
+    .about {
+      flex: none; display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; font-size: 12px; color: var(--muted);
+      border-top: 1px solid color-mix(in srgb, var(--gold-dark) 50%, transparent);
+    }
+    #aboutVersion { color: var(--gold-light); }
+    #aboutStatus { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #aboutStatus.ok { color: var(--ok); }
+    #aboutStatus.new { color: var(--gold); }
+    #aboutStatus.warn { color: var(--danger-light); }
+    .btn.small { height: 24px; padding: 0 10px; font-size: 12px; }
     .hint { flex: none; padding: 6px 16px 6px; color: var(--muted); font-size: 12px; font-style: italic; line-height: 1.4; }
 
     .list { flex: 1; overflow-y: auto; padding: 2px 12px 8px; }
@@ -215,6 +227,11 @@
     </div>
     <div class="list" id="list"></div>
     <div id="msg"></div>
+    <div class="about">
+      <span id="aboutVersion">Version –</span>
+      <span id="aboutStatus"></span>
+      <button class="btn small" id="btnCheckUpdate">Nach Updates suchen</button>
+    </div>
     <footer>
       <button class="btn" id="btnDefaults">Standard</button>
       <div class="grow"></div>

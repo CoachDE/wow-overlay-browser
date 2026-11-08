@@ -42,6 +42,29 @@ function renderThemes(themes) {
   applyTheme(selectedTheme);
 }
 
+// ---------- Version + Updates ----------
+function renderUpdate(u) {
+  const el = $('aboutStatus');
+  let text = '';
+  let kind = '';
+  const st = u && u.status;
+  if (!u || st === 'idle' || st === 'checking') { text = '· wird geprüft …'; }
+  else if (st === 'none') { text = '· ✓ neueste Version'; kind = 'ok'; }
+  else if (st === 'available') { text = `· Update ${u.latest} verfügbar`; kind = 'new'; }
+  else if (st === 'downloading') { text = `· Update ${u.latest} wird geladen … ${u.progress || 0} %`; kind = 'new'; }
+  else if (st === 'ready') { text = `· Update ${u.latest} bereit – Neustart folgt`; kind = 'new'; }
+  else if (st === 'error') { text = '· Update-Prüfung fehlgeschlagen'; kind = 'warn'; }
+  el.textContent = text;
+  el.title = st === 'error' && u.error ? u.error : text.replace(/^· /, '');
+  el.className = kind;
+  $('btnCheckUpdate').disabled = st === 'checking' || st === 'downloading';
+}
+$('btnCheckUpdate').addEventListener('click', () => {
+  renderUpdate({ status: 'checking' });
+  api.checkUpdates();
+});
+api.onUpdateState(renderUpdate);
+
 // ---------- Fokus-Modus ----------
 function updateFocusRow() {
   $('optFocusOpacityValue').textContent = `${$('optFocusOpacity').value} %`;
@@ -217,6 +240,8 @@ $('btnSave').addEventListener('click', async () => {
   labels = data.labels;
   defaults = data.defaults;
   current = { ...data.hotkeys };
+  $('aboutVersion').textContent = `Version ${data.version || '?'}`;
+  renderUpdate(data.update);
   // Hotkeys, die beim letzten Anmelden belegt waren, markieren
   for (const name of data.failed || []) {
     notes[name] = { text: 'Gerade von einem anderen Programm belegt – andere Kombination wählen.', kind: 'warn' };

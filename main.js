@@ -17,7 +17,6 @@ if (finishIdx !== -1) {
 
 const UPDATE_CHECK_DELAY = 8000;                  // erste Prüfung kurz nach dem Start
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // danach alle 6 Stunden
-const MANDATORY_RESTART_SECONDS = 60;             // Pflicht-Update: Neustart nach dieser Zeit
 
 const ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -294,8 +293,8 @@ let adblock = null;
 let updater = null;
 let updateAnnounced = null;   // Version, für die der Hinweis schon gezeigt wurde
 let manualUpdateCheck = false;
-let mandatoryTimer = null;    // Countdown bis zum automatischen Neustart (Pflicht-Update)
-let mandatoryLeft = 0;
+let updatePopup = null;       // Fenster "Neue Version verfügbar"
+let updateRequested = false;  // im Pop-up wurde "Jetzt aktualisieren" geklickt
 let tabs = [];                // Browser-Tabs: { id, view, title, favicon, loading, pendingUrl }
 let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-Tabs
 let nextTabId = 1;
@@ -466,6 +465,7 @@ function createWindow() {
   win.on('hide', updateTray);
 
   win.on('closed', () => {
+    app.quit();   // auch wenn noch ein Pop-up offen ist
     clearInterval(peekTimer);
     clearInterval(volumeTimer);
     win = null;
@@ -623,7 +623,7 @@ function sendState(extra = {}) {
     ytTitle: ytView ? ytView.webContents.getTitle().replace(/\s*-\s*YouTube\s*$/, '') : '',
     adblock: settings.state.adblock !== false,
     adblockStatus: adblock ? adblock.status : 'laedt',
-    update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe, countdown: mandatoryTimer ? mandatoryLeft : 0 } : null,
+    update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
     version: CURRENT_VERSION,
     bookmarks: settings.state.bookmarks,
     showBookmarks: bookmarksShown(),
@@ -1431,65 +1431,36 @@ function setupUpdater() {
   setInterval(() => updater.check(), UPDATE_CHECK_INTERVAL);
 }
 
+function updateInfo() {
+  return updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null;
+}
+
+// Einstellungsfenster (falls offen) über den Update-Zustand informieren
+function sendUpdateToSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('update-state', updateInfo());
+}
+
 function onUpdateState(st) {
+  sendUpdateToSettings();
+  sendUpdateToPopup();
   let notice;
-  // Neue Version: in der fertigen .exe sofort im Hintergrund herunterladen
-  if (st.status === 'available' && updater.portableExe) {
-    if (updateAnnounced !== st.latest) {
-      updateAnnounced = st.latest;
-      notice = st.mandatory
-        ? `Pflicht-Update auf ${st.latest} wird heruntergeladen …`
-        : `Neue Version ${st.latest} wird im Hintergrund heruntergeladen …`;
-    }
+  if (st.status === 'available') {
+    // Neue Version: Pop-up zeigen (bleibt, bis aktualisiert wurde)
     manualUpdateCheck = false;
-    setImmediate(() => updater.download(app.getPath('downloads')));
-    sendState(notice ? { notice } : {});
-    return;
-  }
-  if (st.status === 'ready' && st.mandatory) {
-    startMandatoryCountdown(st.latest);
-    return;
-  }
-  if (st.status === 'available' && updateAnnounced !== st.latest) {
-    updateAnnounced = st.latest;
-    notice = `Neue Version ${st.latest} verfügbar – Klick auf „⬆ Update“ in der Tab-Leiste`;
+    showUpdatePopup();
+  } else if (st.status === 'ready' && updateRequested) {
+    // Download fertig -> kurz "Fertig" zeigen, dann in der neuen Version neu starten
+    setTimeout(() => {
+      if (!updater.restart(() => app.quit())) createTab(RELEASES_PAGE, true);
+    }, 1200);
   } else if (manualUpdateCheck && st.status === 'none') {
     manualUpdateCheck = false;
     notice = `Du hast die neueste Version (${CURRENT_VERSION}).`;
-  } else if (manualUpdateCheck && st.status === 'available') {
-    manualUpdateCheck = false;
-  } else if (st.status === 'error' && manualUpdateCheck) {
+  } else if (manualUpdateCheck && st.status === 'error') {
     manualUpdateCheck = false;
     notice = `Update-Prüfung fehlgeschlagen: ${st.error}`;
-  } else if (st.status === 'ready') {
-    notice = `Version ${st.latest} ist bereit – wird beim Beenden installiert (sofort: „↻ Neu starten“)`;
   }
   sendState(notice ? { notice } : {});
-}
-
-// Pflicht-Update: Hinweis + Countdown, danach automatischer Neustart in der neuen Version
-function startMandatoryCountdown(version) {
-  if (mandatoryTimer) return;
-  mandatoryLeft = MANDATORY_RESTART_SECONDS;
-  try {
-    if (tray && !tray.isDestroyed()) {
-      tray.displayBalloon({
-        iconType: 'info',
-        title: 'Pflicht-Update für das YouTube Overlay',
-        content: `Version ${version} ist bereit. Das Overlay startet in ${MANDATORY_RESTART_SECONDS} Sekunden kurz neu.`
-      });
-    }
-  } catch (_) { /* Benachrichtigung ist optional */ }
-  sendState({ notice: `Pflicht-Update ${version}: Das Overlay startet in ${MANDATORY_RESTART_SECONDS} s neu („Jetzt“ in der Tab-Leiste).` });
-  mandatoryTimer = setInterval(() => {
-    mandatoryLeft -= 1;
-    if (mandatoryLeft <= 0) {
-      clearInterval(mandatoryTimer);
-      updateAction();
-    } else {
-      sendState();
-    }
-  }, 1000);
 }
 
 function checkForUpdatesManually() {
@@ -1498,19 +1469,83 @@ function checkForUpdatesManually() {
   updater.check();
 }
 
-// Klick auf den Update-Knopf: herunterladen -> neu starten (oder Seite öffnen, wenn aus dem Quellcode gestartet)
+// "Jetzt herunterladen und neu starten" im Pop-up
+function startUpdate() {
+  if (!updater) return;
+  if (!updater.portableExe) {           // aus dem Quellcode gestartet: nur Download-Seite öffnen
+    createTab(RELEASES_PAGE, true);
+    return;
+  }
+  updateRequested = true;
+  const st = updater.state.status;
+  if (st === 'ready') updater.restart(() => app.quit());
+  else if (st === 'downloading') return;
+  else if (updater.release) updater.download(app.getPath('downloads'));
+  else updater.check();
+}
+
+// Update-Knopf in der Tab-Leiste: Pop-up wieder nach vorne holen
 function updateAction() {
   if (!updater) return;
-  const st = updater.state.status;
-  if (st === 'available') {
-    if (updater.portableExe) updater.download(app.getPath('downloads'));
-    else createTab(RELEASES_PAGE, true);
-  } else if (st === 'ready') {
-    if (!updater.restart(() => app.quit())) createTab(RELEASES_PAGE, true);
-  } else if (st === 'error') {
-    checkForUpdatesManually();
-  }
+  if (['available', 'downloading', 'ready', 'error'].includes(updater.state.status)) showUpdatePopup();
+  else checkForUpdatesManually();
 }
+
+// ---------------------------------------------------------------------------
+// Update-Pop-up: "Neue Version verfügbar" – ohne Schließen-Knopf
+// ---------------------------------------------------------------------------
+function sendUpdateToPopup() {
+  if (updatePopup && !updatePopup.isDestroyed()) updatePopup.webContents.send('update-state', updateInfo());
+}
+
+function showUpdatePopup() {
+  if (updatePopup && !updatePopup.isDestroyed()) {
+    if (!updatePopup.isVisible()) updatePopup.showInactive();
+    updatePopup.setAlwaysOnTop(true, 'screen-saver');
+    return;
+  }
+  const width = 440;
+  const height = 250;
+  const ref = win && !win.isDestroyed() && win.isVisible() && !miniMode ? win.getBounds() : screen.getPrimaryDisplay().workArea;
+  const bounds = fitToWorkArea({
+    x: ref.x + Math.round((ref.width - width) / 2),
+    y: ref.y + Math.round((ref.height - height) / 2),
+    width,
+    height
+  });
+  updatePopup = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    closable: false,            // kein Schließen – erst nach dem Update weg
+    backgroundColor: '#0b0806',
+    title: 'Update – YouTube Overlay',
+    icon: ICON_PATH,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  updatePopup.setAlwaysOnTop(true, 'screen-saver');
+  updatePopup.loadFile(path.join(__dirname, 'update.html'));
+  // showInactive: WoW behält Tastatur und Maus, bis man das Pop-up anklickt
+  updatePopup.once('ready-to-show', () => { if (updatePopup) updatePopup.showInactive(); });
+  updatePopup.on('closed', () => { updatePopup = null; });
+}
+
+const isFromPopup = (event) => !!updatePopup && !updatePopup.isDestroyed() && event.sender === updatePopup.webContents;
+
+ipcMain.handle('update:get', (event) => {
+  if (!isFromPopup(event)) return null;
+  return { version: CURRENT_VERSION, update: updateInfo(), theme: settings.state.theme };
+});
+ipcMain.on('update:start', (event) => { if (isFromPopup(event)) startUpdate(); });
 
 // ---------------------------------------------------------------------------
 // Tray-Symbol (unten rechts in der Taskleiste) – funktioniert immer,
@@ -1698,7 +1733,9 @@ ipcMain.handle('hotkeys:get', (event) => {
       focusOpacity: settings.state.focusOpacity
     },
     themes: THEMES,
-    failed: [...failedHotkeyNames]
+    failed: [...failedHotkeyNames],
+    version: CURRENT_VERSION,
+    update: updateInfo()
   };
 });
 
@@ -1739,6 +1776,10 @@ ipcMain.on('theme:preview', (event, id) => {
   if (!isFromSettings(event) || !THEME_IDS.has(id)) return;
   previewTheme = id;
   sendState();
+});
+
+ipcMain.on('settings:check-update', (event) => {
+  if (isFromSettings(event)) checkForUpdatesManually();
 });
 
 ipcMain.on('settings:close', (event) => {
@@ -1815,6 +1856,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', () => {
+  if (updatePopup && !updatePopup.isDestroyed()) updatePopup.destroy();
   if (updater && updater.state.status === 'ready') {
     updater.restart(() => {}, { launch: false });
   }

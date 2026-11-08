@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld('overlay', {
   saveHotkeys: (map, options) => ipcRenderer.invoke('hotkeys:save', map, options),
   closeSettings: () => send('settings:close'),
   previewTheme: (id) => send('theme:preview', String(id)),
+  checkUpdates: () => send('settings:check-update'),
+  // Update-Pop-up
+  getUpdateInfo: () => ipcRenderer.invoke('update:get'),
+  startUpdate: () => send('update:start'),
+  onUpdateState: (callback) => {
+    ipcRenderer.on('update-state', (_event, state) => callback(state));
+  },
   onState: (callback) => {
     ipcRenderer.on('state', (_event, state) => callback(state));
   }
