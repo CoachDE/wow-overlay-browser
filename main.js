@@ -128,6 +128,10 @@ app.userAgentFallback = app.userAgentFallback
   .replace(/\sElectron\/\S+/i, '')
   .replace(/\syoutube-overlay\/\S+/i, '');
 
+// Feste Windows-Kennung der App (für Taskleiste/angeheftetes Symbol, siehe setupTaskbarPin)
+const APP_USER_MODEL_ID = 'CoachDE.WowOverlayBrowser';
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
+
 // Nur eine Instanz erlauben
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -366,6 +370,7 @@ function createWindow() {
   // "screen-saver" ist die höchste Ebene – liegt auch über randlosen Vollbild-Spielen
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setOpacity(settings.state.opacity);
+  setupTaskbarPin();
 
   win.loadFile(path.join(__dirname, 'bar.html'));
 
@@ -471,6 +476,26 @@ function createWindow() {
     win = null;
     ytView = null;
   });
+}
+
+// An die Taskleiste anheften: Die Einzel-.exe entpackt sich beim Start in einen Temp-Ordner.
+// Ohne diese Angaben würde Windows beim Anheften den Temp-Pfad speichern (der nach dem Beenden
+// verschwindet). So startet das angeheftete Symbol immer die eigentliche .exe (z. B. auf dem Desktop),
+// und das laufende Fenster wird demselben Symbol zugeordnet.
+function setupTaskbarPin() {
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (!exe || process.platform !== 'win32' || !win) return;
+  try {
+    win.setAppDetails({
+      appId: APP_USER_MODEL_ID,
+      appIconPath: exe,
+      appIconIndex: 0,
+      relaunchCommand: `"${exe}"`,
+      relaunchDisplayName: 'YouTube Overlay'
+    });
+  } catch (err) {
+    console.warn('Taskleisten-Angaben konnten nicht gesetzt werden:', err && err.message);
+  }
 }
 
 function layout() {
