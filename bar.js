@@ -23,6 +23,7 @@ $('btnReload').addEventListener('click', () => api.reload());
 $('btnShorts').addEventListener('click', () => api.shorts());
 $('btnCinema').addEventListener('click', () => api.cinema());
 $('btnClick').addEventListener('click', () => api.toggleClickThrough());
+$('btnFocus').addEventListener('click', () => api.toggleFocus());
 $('btnBar').addEventListener('click', () => api.toggleBar());
 $('btnSettings').addEventListener('click', () => api.openSettings());
 $('btnMin').addEventListener('click', () => api.minimize());
@@ -328,6 +329,12 @@ api.onState((state) => {
   if (typeof state.cinema === 'boolean') $('btnCinema').classList.toggle('on', state.cinema);
 
   $('btnClick').title = `Durchklicken an/aus (${hk(state, 'clickThrough')})`;
+  // Fokus-Modus: offenes Auge = an, durchgestrichen = aus
+  $('btnFocus').classList.toggle('on', !!state.focusMode);
+  $('focusSlash').style.display = state.focusMode ? 'none' : '';
+  $('btnFocus').title = state.focusMode
+    ? `Fokus-Modus AN – ohne Maus ${Math.round((state.focusOpacity || 0.3) * 100)} % sichtbar. Klick: ausschalten (${hk(state, 'toggleFocus')})`
+    : `Fokus-Modus: Overlay wird durchsichtig, wenn die Maus nicht darüber ist. Klick: einschalten (${hk(state, 'toggleFocus')})`;
   $('btnCinema').title = `Kino-Modus an/aus (${hk(state, 'cinema')})`;
   // Ist die Leiste nur wegen der Maus aufgeklappt, macht der Knopf sie wieder dauerhaft sichtbar
   if (state.barVisible) {
@@ -381,6 +388,7 @@ api.onState((state) => {
   }
   if (!shownHotkeyWarning && state.failedHotkeys && state.failedHotkeys.length) {
     shownHotkeyWarning = true;
-    showStatus(`Belegt, funktioniert nicht: ${state.failedHotkeys.join(', ')}. Ändern über ⚙.`, 10000);
+    const n = state.failedHotkeys.length;
+    showStatus(`${n === 1 ? '1 Hotkey ist' : `${n} Hotkeys sind`} von einem anderen Programm belegt – Details unter ✱ Einstellungen`, 6000);
   }
 });

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('overlay', {
   setOpacity: (value) => send('set-opacity', Number(value)),
   toggleClickThrough: () => send('toggle-click-through'),
   toggleBar: () => send('toggle-bar'),
+  toggleFocus: () => send('toggle-focus'),
   cinema: () => send('cinema'),
   minimize: () => send('minimize'),
   toggleMaximize: () => send('toggle-maximize'),

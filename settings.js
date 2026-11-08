@@ -42,6 +42,14 @@ function renderThemes(themes) {
   applyTheme(selectedTheme);
 }
 
+// ---------- Fokus-Modus ----------
+function updateFocusRow() {
+  $('optFocusOpacityValue').textContent = `${$('optFocusOpacity').value} %`;
+  $('optFocusOpacity').closest('.range-row').classList.toggle('disabled', !$('optFocus').checked);
+}
+$('optFocus').addEventListener('change', updateFocusRow);
+$('optFocusOpacity').addEventListener('input', updateFocusRow);
+
 function setMsg(text, kind) {
   const m = $('msg');
   m.textContent = text || '';
@@ -189,17 +197,17 @@ $('btnSave').addEventListener('click', async () => {
   const result = await api.saveHotkeys(current, {
     adblock: $('optAdblock').checked,
     theme: selectedTheme,
-    showBookmarks: $('optBookmarks').checked
+    showBookmarks: $('optBookmarks').checked,
+    focusMode: $('optFocus').checked,
+    focusOpacity: Number($('optFocusOpacity').value) / 100
   });
-  if (result && result.ok && result.failed.length === 0) {
+  // Immer schließen. Belegte Hotkeys meldet die Leiste kurz und sie werden
+  // beim nächsten Öffnen hier markiert.
+  if (result && result.ok) {
     api.closeSettings();
     return;
   }
-  if (result && result.ok) {
-    setMsg(`Gespeichert, aber belegt: ${result.failed.join(', ')}`, 'warn');
-  } else {
-    setMsg('Speichern fehlgeschlagen.', 'warn');
-  }
+  setMsg('Speichern fehlgeschlagen.', 'warn');
   render();
 });
 
@@ -209,8 +217,15 @@ $('btnSave').addEventListener('click', async () => {
   labels = data.labels;
   defaults = data.defaults;
   current = { ...data.hotkeys };
+  // Hotkeys, die beim letzten Anmelden belegt waren, markieren
+  for (const name of data.failed || []) {
+    notes[name] = { text: 'Gerade von einem anderen Programm belegt – andere Kombination wählen.', kind: 'warn' };
+  }
   $('optAdblock').checked = !!(data.options && data.options.adblock);
   $('optBookmarks').checked = !(data.options && data.options.showBookmarks === false);
+  $('optFocus').checked = !!(data.options && data.options.focusMode);
+  $('optFocusOpacity').value = Math.round(((data.options && data.options.focusOpacity) || 0.3) * 100);
+  updateFocusRow();
   selectedTheme = (data.options && data.options.theme) || 'gold';
   renderThemes(data.themes || []);
   render();

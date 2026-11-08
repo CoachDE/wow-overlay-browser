@@ -35,6 +35,10 @@ const HOME_URL = 'https://www.youtube.com/';
 const SHORTS_URL = 'https://www.youtube.com/shorts';
 const PEEK_ZONE = 12;        // Pixel am oberen Rand, die die ausgeblendete Leiste wieder aufklappen
 const PEEK_HIDE_DELAY = 700; // ms, bis die aufgeklappte Leiste nach dem Wegfahren wieder verschwindet
+const FOCUS_FADE_DELAY = 1000;  // Fokus-Modus: so lange (ms) muss die Maus weg sein, bis abgeblendet wird
+const FOCUS_FADE_MS = 220;      // Dauer der Überblendung
+const FOCUS_MIN = 0.1;
+const FOCUS_MAX = 0.9;
 const TAB_HEIGHT = 28;       // Höhe der Tab-Leiste unter der Steuerleiste
 const TOP_HEIGHT = BAR_HEIGHT + TAB_HEIGHT;
 const BM_HEIGHT = 24;        // Höhe der Lesezeichen-Leiste
@@ -65,6 +69,7 @@ const DEFAULT_HOTKEYS = {
   quitApp: 'Control+Alt+X',
   toggleMaximize: 'Control+Alt+G',
   toggleMini: 'Control+Alt+H',
+  toggleFocus: 'Control+Alt+T',
   playPause: 'Control+Alt+K',
   seekBack: 'Control+Alt+J',
   seekForward: 'Control+Alt+L',
@@ -86,6 +91,7 @@ const HOTKEY_LABELS = {
   quitApp: 'Overlay beenden',
   toggleMaximize: 'Maximieren / Normalgröße',
   toggleMini: 'Mini-Leiste / Wiederherstellen',
+  toggleFocus: 'Fokus-Modus an/aus',
   playPause: 'Play / Pause',
   seekBack: '10 Sekunden zurück',
   seekForward: '10 Sekunden vor',
@@ -108,6 +114,8 @@ const DEFAULT_STATE = {
   barVisible: true,
   adblock: true,           // Werbeblocker an/aus
   theme: 'gold',           // Design
+  focusMode: false,        // Fokus-Modus: ohne Maus durchsichtig
+  focusOpacity: 0.3,       // Deckkraft im Fokus-Modus, wenn die Maus nicht über dem Overlay ist
   volume: null,            // YouTube-Lautstärke 0–100 (null = noch nie eingestellt)
   tabs: [],                // offene Browser-Tabs (Adressen), werden beim Start wiederhergestellt
   bookmarks: [],           // Lesezeichen: { id, title, url, favicon }
@@ -145,6 +153,11 @@ function loadSettings() {
   const o = Number(settings.state.opacity);
   settings.state.opacity = Number.isFinite(o) ? clamp(o, MIN_OPACITY, MAX_OPACITY) : 1.0;
   if (!THEME_IDS.has(settings.state.theme)) settings.state.theme = 'gold';
+  settings.state.focusMode = settings.state.focusMode === true;
+  {
+    const f = Number(settings.state.focusOpacity);
+    settings.state.focusOpacity = Number.isFinite(f) ? clamp(f, FOCUS_MIN, FOCUS_MAX) : 0.3;
+  }
   settings.state.bookmarks = sanitizeBookmarks(settings.state.bookmarks);
   if (typeof settings.state.lastUrl !== 'string' || !isAllowedInApp(settings.state.lastUrl)) {
     settings.state.lastUrl = HOME_URL;
@@ -288,6 +301,10 @@ let activeTab = 'yt';         // 'yt' = YouTube-Tab, sonst die id eines Browser-
 let nextTabId = 1;
 let previewTheme = null;      // Design-Vorschau, solange die Einstellungen offen sind
 let miniMode = false;         // Overlay ist zur Mini-Leiste verkleinert
+let focusFaded = false;       // Fokus-Modus: gerade abgeblendet
+let focusLeftAt = 0;
+let fadeTimer = null;
+let shownOpacity = null;      // aktuell angezeigte Deckkraft (für weiche Übergänge)
 let ytPlaying = false;
 let ytMuted = false;
 let volumeSetAt = 0;          // Zeitpunkt der letzten eigenen Lautstärke-Änderung
@@ -300,6 +317,7 @@ let barPeek = false;          // Leiste ist ausgeblendet, aber wegen der Maus ku
 let peekLeftAt = 0;
 let peekTimer = null;
 const failedHotkeys = [];
+const failedHotkeyNames = [];
 
 function defaultBounds() {
   const area = screen.getPrimaryDisplay().workArea;
@@ -441,7 +459,7 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', () => sendState());
 
-  peekTimer = setInterval(checkBarPeek, 100);
+  peekTimer = setInterval(() => { checkBarPeek(); checkFocusMode(); }, 100);
   volumeTimer = setInterval(syncVolumeFromPlayer, 1500);
 
   win.on('show', updateTray);
@@ -596,6 +614,9 @@ function sendState(extra = {}) {
     maximized,
     miniMode,
     theme: previewTheme || settings.state.theme,
+    focusMode: settings.state.focusMode,
+    focusOpacity: settings.state.focusOpacity,
+    focusFaded,
     ytPlaying,
     volume: Number.isFinite(settings.state.volume) ? settings.state.volume : 100,
     muted: ytMuted,
@@ -618,9 +639,82 @@ function sendState(extra = {}) {
 // ---------------------------------------------------------------------------
 function setOpacity(value) {
   settings.state.opacity = Math.round(clamp(value, MIN_OPACITY, MAX_OPACITY) * 100) / 100;
-  if (win) win.setOpacity(settings.state.opacity);
+  applyOpacity(false);
   saveSettingsSoon();
   sendState();
+}
+
+// ---------------------------------------------------------------------------
+// Fokus-Modus: Overlay wird durchsichtig, wenn die Maus nicht darüber ist
+// ---------------------------------------------------------------------------
+function targetOpacity() {
+  const base = settings.state.opacity;
+  if (settings.state.focusMode && focusFaded) return Math.min(base, settings.state.focusOpacity);
+  return base;
+}
+
+// Deckkraft setzen – mit animate=true weich überblenden
+function applyOpacity(animate) {
+  if (!win || win.isDestroyed()) return;
+  clearInterval(fadeTimer);
+  const to = targetOpacity();
+  const from = shownOpacity === null ? win.getOpacity() : shownOpacity;
+  if (!animate || Math.abs(to - from) < 0.01) {
+    shownOpacity = to;
+    win.setOpacity(to);
+    return;
+  }
+  const steps = 8;
+  let i = 0;
+  fadeTimer = setInterval(() => {
+    i += 1;
+    shownOpacity = from + (to - from) * (i / steps);
+    if (win && !win.isDestroyed()) win.setOpacity(shownOpacity);
+    if (i >= steps) clearInterval(fadeTimer);
+  }, FOCUS_FADE_MS / steps);
+}
+
+function checkFocusMode() {
+  if (!win || win.isDestroyed()) return;
+  if (!settings.state.focusMode || !win.isVisible() || win.isMinimized()) {
+    if (focusFaded) { focusFaded = false; applyOpacity(true); }
+    focusLeftAt = 0;
+    return;
+  }
+  const p = screen.getCursorScreenPoint();
+  const b = win.getBounds();
+  const inside = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
+  // Sichtbar bleiben: Maus drüber, Overlay wird gerade benutzt (Fokus) oder Einstellungen offen
+  const engaged = inside ||
+    (win.isFocused() && !clickThrough) ||
+    (settingsWin && !settingsWin.isDestroyed() && settingsWin.isVisible());
+  if (engaged) {
+    focusLeftAt = 0;
+    if (focusFaded) { focusFaded = false; applyOpacity(true); }
+  } else if (!focusFaded) {
+    if (!focusLeftAt) focusLeftAt = Date.now();
+    else if (Date.now() - focusLeftAt >= FOCUS_FADE_DELAY) { focusFaded = true; applyOpacity(true); }
+  }
+}
+
+function setFocusMode(on, announce = true) {
+  settings.state.focusMode = !!on;
+  focusLeftAt = 0;
+  if (!on && focusFaded) { focusFaded = false; applyOpacity(true); }
+  saveSettingsSoon();
+  sendState(announce ? {
+    notice: on
+      ? `Fokus-Modus an – ohne Maus wird das Overlay auf ${Math.round(settings.state.focusOpacity * 100)} % abgeblendet`
+      : 'Fokus-Modus aus'
+  } : {});
+}
+
+function setFocusOpacity(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return;
+  settings.state.focusOpacity = Math.round(clamp(v, FOCUS_MIN, FOCUS_MAX) * 100) / 100;
+  if (focusFaded) applyOpacity(true);
+  saveSettingsSoon();
 }
 
 function setClickThrough(on) {
@@ -1448,6 +1542,7 @@ function updateTray() {
     { type: 'separator' },
     { label: withKey(visible ? 'Overlay ausblenden' : 'Overlay anzeigen', 'toggleVisible'), click: () => toggleVisible() },
     { label: withKey('Durchklicken', 'clickThrough'), type: 'checkbox', checked: clickThrough, click: () => setClickThrough(!clickThrough) },
+    { label: withKey('Fokus-Modus', 'toggleFocus'), type: 'checkbox', checked: !!(settings && settings.state.focusMode), click: () => setFocusMode(!settings.state.focusMode) },
     { label: withKey('Leiste anzeigen', 'toggleBar'), type: 'checkbox', checked: !!(settings && settings.state.barVisible), click: () => setBarVisible(!settings.state.barVisible) },
     { label: withKey(miniMode ? 'Mini-Leiste wiederherstellen' : 'Zur Mini-Leiste verkleinern', 'toggleMini'), click: () => toggleMini() },
     { label: withKey(maximized ? 'Normalgröße' : 'Maximieren', 'toggleMaximize'), click: () => toggleMaximize() },
@@ -1472,6 +1567,7 @@ const hotkeyActions = {
   quitApp: () => app.quit(),
   toggleMaximize: () => toggleMaximize(),
   toggleMini: () => toggleMini(),
+  toggleFocus: () => setFocusMode(!settings.state.focusMode),
   playPause: () => playerCommand('playPause'),
   seekBack: () => playerCommand('seekBack'),
   seekForward: () => playerCommand('seekForward'),
@@ -1489,6 +1585,7 @@ const hotkeyActions = {
 
 function registerHotkeys() {
   failedHotkeys.length = 0;
+  failedHotkeyNames.length = 0;
   for (const [name, action] of Object.entries(hotkeyActions)) {
     const accel = settings.hotkeys[name];
     if (!accel) continue; // leer = deaktiviert
@@ -1499,6 +1596,7 @@ function registerHotkeys() {
       ok = false;
     }
     if (!ok) {
+      failedHotkeyNames.push(name);
       failedHotkeys.push(`${HOTKEY_LABELS[name] || name} (${accel})`);
       console.warn(`Hotkey konnte nicht registriert werden: ${accel} (${name})`);
     }
@@ -1541,7 +1639,7 @@ function openSettingsWindow() {
   }
   // Mittig über dem Overlay platzieren
   const width = 460;
-  const height = 760;
+  const height = 820;
   const ref = win ? win.getBounds() : screen.getPrimaryDisplay().workArea;
   const bounds = fitToWorkArea({
     x: ref.x + Math.round((ref.width - width) / 2),
@@ -1592,8 +1690,15 @@ ipcMain.handle('hotkeys:get', (event) => {
     hotkeys: settings.hotkeys,
     defaults: DEFAULT_HOTKEYS,
     labels: HOTKEY_LABELS,
-    options: { adblock: settings.state.adblock !== false, theme: settings.state.theme, showBookmarks: settings.state.showBookmarks !== false },
-    themes: THEMES
+    options: {
+      adblock: settings.state.adblock !== false,
+      theme: settings.state.theme,
+      showBookmarks: settings.state.showBookmarks !== false,
+      focusMode: settings.state.focusMode,
+      focusOpacity: settings.state.focusOpacity
+    },
+    themes: THEMES,
+    failed: [...failedHotkeyNames]
   };
 });
 
@@ -1606,6 +1711,10 @@ ipcMain.handle('hotkeys:save', (event, map, options) => {
   if (!isFromSettings(event)) return { ok: false, failed: [] };
   if (options && typeof options.adblock === 'boolean' && options.adblock !== (settings.state.adblock !== false)) {
     setAdblock(options.adblock);
+  }
+  if (options && Number.isFinite(Number(options.focusOpacity))) setFocusOpacity(options.focusOpacity);
+  if (options && typeof options.focusMode === 'boolean' && options.focusMode !== settings.state.focusMode) {
+    setFocusMode(options.focusMode, false);
   }
   if (options && typeof options.showBookmarks === 'boolean' && options.showBookmarks !== (settings.state.showBookmarks !== false)) {
     settings.state.showBookmarks = options.showBookmarks;
@@ -1667,6 +1776,7 @@ ipcMain.on('set-opacity', (_e, value) => {
   if (Number.isFinite(v)) setOpacity(v);
 });
 ipcMain.on('toggle-click-through', () => setClickThrough(!clickThrough));
+ipcMain.on('toggle-focus', (e) => { if (fromBar(e)) setFocusMode(!settings.state.focusMode); });
 ipcMain.on('toggle-bar', () => setBarVisible(!settings.state.barVisible));
 ipcMain.on('cinema', () => { activateTab('yt'); playerCommand('cinema'); });
 ipcMain.on('minimize', (e) => { if (fromBar(e)) toggleMini(); });

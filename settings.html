@@ -95,6 +95,21 @@
       box-shadow: 0 0 6px color-mix(in srgb, var(--gold-light) 70%, transparent);
     }
     .toggle:hover .switch { border-color: var(--gold); }
+    .range-row {
+      flex: none; display: flex; align-items: center; gap: 10px;
+      margin: 0 16px 4px; padding: 2px 0 6px; font-size: 12px; color: var(--muted);
+    }
+    .range-row span:first-child { flex: 1; }
+    .range-row input[type=range] {
+      -webkit-appearance: none; appearance: none; width: 140px; height: 6px; margin: 0;
+      background: var(--field); border: 1px solid var(--gold-dark); border-radius: 3px; cursor: pointer;
+    }
+    .range-row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 10px; height: 14px; border-radius: 2px;
+      background: linear-gradient(180deg, var(--gold-light), var(--gold-dark)); border: 1px solid var(--ink);
+    }
+    .range-row #optFocusOpacityValue { width: 38px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+    .range-row.disabled { opacity: .45; }
     .hint { flex: none; padding: 6px 16px 6px; color: var(--muted); font-size: 12px; font-style: italic; line-height: 1.4; }
 
     .list { flex: 1; overflow-y: auto; padding: 2px 12px 8px; }
@@ -172,6 +187,19 @@
       <input type="checkbox" id="optAdblock">
       <span class="switch"></span>
     </label>
+    <label class="toggle" for="optFocus">
+      <span class="toggle-text">
+        Fokus-Modus
+        <small>Overlay wird durchsichtig, wenn die Maus nicht darüber ist (Auge-Knopf oben)</small>
+      </span>
+      <input type="checkbox" id="optFocus">
+      <span class="switch"></span>
+    </label>
+    <div class="range-row">
+      <span>Deckkraft ohne Maus</span>
+      <input type="range" id="optFocusOpacity" min="10" max="90" step="5">
+      <span id="optFocusOpacityValue">30 %</span>
+    </div>
     <label class="toggle" for="optBookmarks">
       <span class="toggle-text">
         Lesezeichen-Leiste

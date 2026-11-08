@@ -41,6 +41,7 @@ Beim ersten Start fragt YouTube nach der Cookie-Zustimmung. Das musst du nur ein
 | 🔊 Regler | **YouTube-Lautstärke**. Klick auf den Lautsprecher = stumm, Mausrad über dem Regler = feiner einstellen. Gilt auch für jedes neue Video und bleibt mit YouTubes eigenem Regler synchron |
 | ▯ Shorts | **YouTube Shorts** öffnen. Das Overlay wird automatisch hochkant und kehrt beim Verlassen der Shorts zur normalen Größe zurück (beide Größen werden gemerkt) |
 | ⛶ | **Kino-Modus**: Das Video füllt das ganze Overlay (YouTubes eigener Vollbild-Knopf und die Taste **F** machen dasselbe) |
+| 👁 | **Fokus-Modus**: Ist die Maus nicht über dem Overlay (und du spielst in WoW), blendet es nach 1 Sekunde weich auf eine einstellbare Deckkraft ab (Standard 30 %) – Maus drüber oder Klick hinein = sofort wieder voll sichtbar. Deckkraft einstellbar unter ✱ → Allgemein |
 | ↖ | **Durchklicken**: Mausklicks gehen durch das Overlay zu WoW |
 | ▲ / ▼ | Leiste ausblenden. **Wieder einblenden:** mit der Maus an den oberen Rand des Overlays fahren, dann klappt die Leiste auf. Mit ▼ bleibt sie dauerhaft sichtbar |
 | ✱ | **Einstellungen**: Design, Werbeblocker an/aus, Hotkeys ändern |
@@ -89,6 +90,7 @@ Die Hotkeys funktionieren auch, während du in WoW bist. Ändern geht über den 
 | `Strg+Alt+X` | Overlay beenden |
 | `Strg+Alt+G` | Maximieren / Normalgröße |
 | `Strg+Alt+H` | Mini-Leiste / Wiederherstellen |
+| `Strg+Alt+T` | Fokus-Modus an/aus |
 | `Strg+Alt+K` | Play / Pause |
 | `Strg+Alt+J` / `Strg+Alt+L` | 10 Sekunden zurück / vor |
 | `Strg+Alt+N` | Ton an/aus |
