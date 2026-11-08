@@ -113,6 +113,18 @@ npm start          # App aus dem Quellcode starten
 npm run dist       # dist\YouTube-Overlay.exe bauen
 ```
 
+### Neue Version veröffentlichen
+
+Releases baut GitHub automatisch (siehe `.github/workflows/release.yml`):
+
+1. In `package.json` die `"version"` erhöhen (z. B. `1.2.0`) und committen.
+2. Tag setzen und hochladen:
+   ```
+   git tag -a v1.2.0 -m "Version 1.2.0"
+   git push origin main v1.2.0
+   ```
+3. Nach ein paar Minuten steht die neue `YouTube-Overlay.exe` unter *Releases*.
+
 ## Hinweise
 
 - Links zu anderen Seiten (z. B. in Videobeschreibungen) öffnen sich in einem neuen Tab im Overlay.
