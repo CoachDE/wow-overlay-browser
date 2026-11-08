@@ -1161,8 +1161,8 @@ function resetWindowPosition() {
 // Updates (neue Versionen von GitHub)
 // ---------------------------------------------------------------------------
 function setupUpdater() {
-  cleanupDownloads();
   updater = new Updater({ onChange: onUpdateState });
+  cleanupDownloads([app.getPath('downloads')], () => ['downloading', 'ready'].includes(updater.state.status));
   setTimeout(() => updater.check(), UPDATE_CHECK_DELAY);
   setInterval(() => updater.check(), UPDATE_CHECK_INTERVAL);
 }

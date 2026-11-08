@@ -180,21 +180,29 @@ function finishUpdate(app, oldExe, waitPid) {
   });
 }
 
-// Heruntergeladene Zwischendateien (YouTube-Overlay-1.2.3.exe) neben der App entfernen.
-function cleanupDownloads() {
+// Fertig benutzte Update-Dateien (YouTube-Overlay-1.2.3.exe) neben der App und im
+// Download-Ordner entfernen. Läuft nie während eines Updates (isBusy) und fasst halb
+// fertige Downloads (.part) nicht an. Zweiter Versuch später, falls eine Datei gerade
+// noch vom beendeten Update-Prozess gesperrt ist.
+function cleanupDownloads(extraDirs, isBusy) {
   const self = process.env.PORTABLE_EXECUTABLE_FILE;
   if (!self) return;
-  const dir = path.dirname(self);
-  setTimeout(() => {
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        const full = path.join(dir, f);
-        if ((DOWNLOAD_NAME.test(f) || /^YouTube-Overlay-\d+\.\d+\.\d+\.exe\.part$/i.test(f)) && path.resolve(full) !== path.resolve(self)) {
-          try { fs.unlinkSync(full); } catch (_) { /* noch in Benutzung – nächstes Mal */ }
+  const dirs = [path.dirname(self), ...(extraDirs || [])].filter(Boolean);
+  const run = () => {
+    if (isBusy && isBusy()) return;
+    for (const dir of dirs) {
+      try {
+        for (const f of fs.readdirSync(dir)) {
+          const full = path.join(dir, f);
+          if (DOWNLOAD_NAME.test(f) && path.resolve(full) !== path.resolve(self)) {
+            try { fs.unlinkSync(full); } catch (_) { /* noch gesperrt – nächster Versuch */ }
+          }
         }
-      }
-    } catch (_) { /* Ordner nicht lesbar */ }
-  }, 15000);
+      } catch (_) { /* Ordner nicht lesbar */ }
+    }
+  };
+  setTimeout(run, 3000);
+  setTimeout(run, 60000);
 }
 
 module.exports = { Updater, isNewer, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG };
