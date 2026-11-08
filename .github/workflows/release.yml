@@ -1,0 +1,42 @@
+# Baut bei jedem Versions-Tag (z. B. v1.2.0) die Windows-.exe und veröffentlicht sie als Release.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: .exe bauen
+        run: npx electron-builder --win portable --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Release veröffentlichen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/YouTube-Overlay.exe --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/YouTube-Overlay.exe \
+              --title "WoW Overlay Browser $VERSION" \
+              --notes-file .github/release-notes.md
+          fi
