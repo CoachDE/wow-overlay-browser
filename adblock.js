@@ -93,6 +93,18 @@ const SKIPPER_JS = `(() => {
 
     document.querySelectorAll('.ytp-ad-overlay-close-button').forEach((b) => b.click());
 
+    // YouTube-Hinweis "Kommt es zu Unterbrechungen?" / "Experiencing interruptions?" ausblenden
+    // (erscheint, wenn YouTube einen Werbeblocker vermutet)
+    document.querySelectorAll('tp-yt-paper-toast, yt-notification-action-renderer').forEach((t) => {
+      if (t.dataset.ytoHidden) return;
+      if (/Unterbrechungen|interruptions/i.test(t.textContent || '')) {
+        t.dataset.ytoHidden = '1';
+        t.style.setProperty('display', 'none', 'important');
+        const toast = t.closest('tp-yt-paper-toast');
+        if (toast && toast !== t) toast.style.setProperty('display', 'none', 'important');
+      }
+    });
+
     // Werbe-Short im Shorts-Feed: zum nächsten Short springen
     if (location.pathname.startsWith('/shorts') && Date.now() - lastShortsSkip > 1500) {
       const reel = document.querySelector('ytd-reel-video-renderer[is-active]');
