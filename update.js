@@ -80,9 +80,47 @@ class Updater {
     this.onChange(this.state);
   }
 
-  async check() {
-    if (['downloading', 'ready'].includes(this.state.status)) return this.state;
-    this.set({ status: 'checking', error: null });
+  // Neueste Versionsnummer über die Weiterleitung von ".../releases/latest" ->
+  // ".../releases/tag/v1.2.3". Das ist eine winzige Anfrage ohne API-Limit und
+  // kann deshalb sehr oft gemacht werden. null, wenn es nicht geklappt hat.
+  async latestTag() {
+    try {
+      const res = await fetchWithTimeout(RELEASES_PAGE, {
+        method: 'HEAD',
+        redirect: 'manual',
+        headers: { 'User-Agent': 'wow-overlay-browser-updater' }
+      }, 10000);
+      const m = String(res.headers.get('location') || '').match(/\/releases\/tag\/v?(\d+\.\d+\.\d+)/i);
+      return m ? m[1] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // quiet = automatische Prüfung im Hintergrund: kein "wird geprüft"-Zwischenstand
+  // und kein Fehler-Zustand bei kurzen Netzproblemen (nächste Prüfung kommt gleich).
+  async check(quiet = false) {
+    if (['downloading', 'ready'].includes(this.state.status) || this.inFlight) return this.state;
+    this.inFlight = true;
+    try {
+      return await this.runCheck(quiet);
+    } finally {
+      this.inFlight = false;
+    }
+  }
+
+  async runCheck(quiet) {
+    if (!quiet) this.set({ status: 'checking', error: null });
+    // 1. schnelle Prüfung: gibt es überhaupt eine neuere Version?
+    const tag = await this.latestTag();
+    if (tag && !isNewer(tag, CURRENT_VERSION)) {
+      this.release = null;
+      if (!quiet || this.state.status !== 'none' || this.state.latest !== tag) this.set({ status: 'none', latest: tag });
+      return this.state;
+    }
+    // Dieselbe neue Version ist schon bekannt -> nichts weiter tun
+    if (tag && this.release && this.release.version === tag && this.state.status === 'available') return this.state;
+    // 2. neue Version (oder schnelle Prüfung fehlgeschlagen): Details über die API holen
     try {
       const res = await fetchWithTimeout(API_URL, {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'wow-overlay-browser-updater' }
@@ -100,11 +138,12 @@ class Updater {
         this.release = { version: latest, url: asset.browser_download_url, size: asset.size, page: rel.html_url || RELEASES_PAGE };
         this.set({ status: 'available', latest, progress: 0, mandatory });
       } else {
+        // z. B. Release gerade erst angelegt, .exe noch nicht hochgeladen -> nächste Prüfung
         this.release = null;
-        this.set({ status: 'none', latest: latest || CURRENT_VERSION });
+        if (!quiet || this.state.status !== 'none') this.set({ status: 'none', latest: latest || CURRENT_VERSION });
       }
     } catch (err) {
-      this.set({ status: 'error', error: err && err.name === 'AbortError' ? 'timeout' : String(err && err.message || err) });
+      if (!quiet) this.set({ status: 'error', error: err && err.name === 'AbortError' ? 'timeout' : String(err && err.message || err) });
     }
     return this.state;
   }

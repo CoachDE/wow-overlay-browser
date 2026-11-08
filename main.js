@@ -20,8 +20,8 @@ if (finishIdx !== -1) {
 }
 
 const UPDATE_CHECK_DELAY = 8000;                  // erste Prüfung kurz nach dem Start
-const UPDATE_CHECK_INTERVAL = 30 * 60 * 1000;     // danach alle 30 Minuten
-const UPDATE_CHECK_ON_USE = 10 * 60 * 1000;       // zusätzlich beim Benutzen, wenn letzte Prüfung > 10 min her
+const UPDATE_CHECK_INTERVAL = 60 * 1000;          // jede Minute (kleine Anfrage, kein API-Limit)
+const UPDATE_CHECK_ON_USE = 20 * 1000;            // zusätzlich bei jedem Benutzen (höchstens alle 20 s)
 
 const ICON_PATH = path.join(__dirname, 'icon.png');
 
@@ -1742,7 +1742,7 @@ function checkForUpdatesQuietly(minAge = 0) {
   if (Date.now() - lastUpdateCheck < minAge) return;
   if (['checking', 'downloading', 'ready'].includes(updater.state.status)) return;
   lastUpdateCheck = Date.now();
-  updater.check();
+  updater.check(true);
 }
 
 function updateInfo() {
