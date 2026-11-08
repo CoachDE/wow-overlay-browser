@@ -24,6 +24,14 @@ contextBridge.exposeInMainWorld('overlay', {
   shorts: () => send('shorts'),
   newTab: () => send('tab:new'),
   updateAction: () => send('update:action'),
+  toggleBookmark: () => send('bookmark:toggle'),
+  openBookmark: (id, newTab) => send('bookmark:open', String(id), !!newTab),
+  bookmarkMenu: (id) => send('bookmark:menu', String(id)),
+  renameBookmark: (id, title) => send('bookmark:rename', String(id), String(title)),
+  moveBookmark: (id, toIndex) => send('bookmark:move', String(id), Number(toIndex)),
+  onEditBookmark: (callback) => {
+    ipcRenderer.on('bookmark:edit', (_event, id) => callback(String(id)));
+  },
   activateTab: (id) => send('tab:activate', id === 'yt' ? 'yt' : Number(id)),
   closeTab: (id) => send('tab:close', Number(id)),
   onFocusUrl: (callback) => {

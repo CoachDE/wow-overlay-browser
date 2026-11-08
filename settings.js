@@ -186,7 +186,11 @@ $('btnX').addEventListener('click', () => api.closeSettings());
 
 $('btnSave').addEventListener('click', async () => {
   recording = null;
-  const result = await api.saveHotkeys(current, { adblock: $('optAdblock').checked, theme: selectedTheme });
+  const result = await api.saveHotkeys(current, {
+    adblock: $('optAdblock').checked,
+    theme: selectedTheme,
+    showBookmarks: $('optBookmarks').checked
+  });
   if (result && result.ok && result.failed.length === 0) {
     api.closeSettings();
     return;
@@ -206,6 +210,7 @@ $('btnSave').addEventListener('click', async () => {
   defaults = data.defaults;
   current = { ...data.hotkeys };
   $('optAdblock').checked = !!(data.options && data.options.adblock);
+  $('optBookmarks').checked = !(data.options && data.options.showBookmarks === false);
   selectedTheme = (data.options && data.options.theme) || 'gold';
   renderThemes(data.themes || []);
   render();

@@ -36,6 +36,8 @@ const PEEK_ZONE = 12;        // Pixel am oberen Rand, die die ausgeblendete Leis
 const PEEK_HIDE_DELAY = 700; // ms, bis die aufgeklappte Leiste nach dem Wegfahren wieder verschwindet
 const TAB_HEIGHT = 28;       // Höhe der Tab-Leiste unter der Steuerleiste
 const TOP_HEIGHT = BAR_HEIGHT + TAB_HEIGHT;
+const BM_HEIGHT = 24;        // Höhe der Lesezeichen-Leiste
+const MAX_BOOKMARKS = 60;
 const START_PAGE = 'https://www.google.com/';
 const SEARCH_URL = 'https://www.google.com/search?q=';
 const MAX_TABS = 12;
@@ -107,6 +109,8 @@ const DEFAULT_STATE = {
   theme: 'gold',           // Design
   volume: null,            // YouTube-Lautstärke 0–100 (null = noch nie eingestellt)
   tabs: [],                // offene Browser-Tabs (Adressen), werden beim Start wiederhergestellt
+  bookmarks: [],           // Lesezeichen: { id, title, url, favicon }
+  showBookmarks: true,     // Lesezeichen-Leiste anzeigen (sobald es Lesezeichen gibt)
   lastUrl: HOME_URL
 };
 
@@ -140,6 +144,7 @@ function loadSettings() {
   const o = Number(settings.state.opacity);
   settings.state.opacity = Number.isFinite(o) ? clamp(o, MIN_OPACITY, MAX_OPACITY) : 1.0;
   if (!THEME_IDS.has(settings.state.theme)) settings.state.theme = 'gold';
+  settings.state.bookmarks = sanitizeBookmarks(settings.state.bookmarks);
   if (typeof settings.state.lastUrl !== 'string' || !isAllowedInApp(settings.state.lastUrl)) {
     settings.state.lastUrl = HOME_URL;
   }
@@ -160,6 +165,22 @@ function saveSettingsNow() {
   } catch (err) {
     console.error('Einstellungen konnten nicht gespeichert werden:', err);
   }
+}
+
+function sanitizeBookmarks(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const b of list) {
+    if (!b || typeof b.url !== 'string' || !/^https?:\/\//i.test(b.url)) continue;
+    out.push({
+      id: typeof b.id === 'string' && b.id ? b.id : Math.random().toString(36).slice(2),
+      title: String(b.title || b.url).slice(0, 200),
+      url: b.url,
+      favicon: typeof b.favicon === 'string' ? b.favicon : ''
+    });
+    if (out.length >= MAX_BOOKMARKS) break;
+  }
+  return out;
 }
 
 function sanitizeHotkeys(input) {
@@ -434,7 +455,7 @@ function createWindow() {
 function layout() {
   if (!win || !ytView) return;
   const [w, h] = win.getContentSize();
-  const top = barShown() ? TOP_HEIGHT : BORDER;
+  const top = barShown() ? topHeight() : BORDER;
   const bounds = {
     x: BORDER,
     y: top,
@@ -448,6 +469,15 @@ function layout() {
     t.view.setBounds(bounds);
     t.view.setVisible(!miniMode && t.id === activeTab);
   }
+}
+
+function bookmarksShown() {
+  return settings.state.showBookmarks !== false && settings.state.bookmarks.length > 0;
+}
+
+// Höhe von Steuerleiste + Tab-Leiste (+ Lesezeichen-Leiste)
+function topHeight() {
+  return TOP_HEIGHT + (bookmarksShown() ? BM_HEIGHT : 0);
 }
 
 function barShown() {
@@ -477,7 +507,7 @@ function checkBarPeek() {
     if (insideX && p.y >= b.y && p.y < b.y + PEEK_ZONE) setBarPeek(true);
     return;
   }
-  const overBar = insideX && p.y >= b.y && p.y < b.y + TOP_HEIGHT + 8;
+  const overBar = insideX && p.y >= b.y && p.y < b.y + topHeight() + 8;
   const typing = win.isFocused() && win.webContents.isFocused();
   if (overBar || typing) {
     peekLeftAt = 0;
@@ -505,7 +535,7 @@ function fitToWorkArea(b) {
 function defaultShortsSize(cur) {
   const area = screen.getDisplayMatching(cur).workArea;
   const height = Math.min(Math.max(cur.height, 640), area.height - 40);
-  const videoHeight = height - TOP_HEIGHT - BORDER;
+  const videoHeight = height - topHeight() - BORDER;
   const width = Math.max(320, Math.round(videoHeight * 9 / 16) + BORDER * 2);
   return { width, height };
 }
@@ -571,6 +601,9 @@ function sendState(extra = {}) {
     adblockStatus: adblock ? adblock.status : 'laedt',
     update: updater ? { ...updater.state, selfUpdate: !!updater.portableExe } : null,
     version: CURRENT_VERSION,
+    bookmarks: settings.state.bookmarks,
+    showBookmarks: bookmarksShown(),
+    bookmarked: !!findBookmark(currentPage().url),
     hotkeys: settings.hotkeys,
     failedHotkeys,
     ...extra
@@ -978,6 +1011,130 @@ function focusAddressBar() {
 }
 
 // ---------------------------------------------------------------------------
+// Lesezeichen
+// ---------------------------------------------------------------------------
+
+// Für den Vergleich: ohne #Anker; YouTube-Videos nur mit Video-ID (ohne Zeitstempel/Playlist)
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    if (hostMatches(u.hostname, 'youtube.com') && u.pathname === '/watch' && u.searchParams.get('v')) {
+      return 'https://www.youtube.com/watch?v=' + u.searchParams.get('v');
+    }
+    return u.toString();
+  } catch (_) {
+    return String(url || '');
+  }
+}
+
+function findBookmark(url) {
+  if (!url) return null;
+  const n = normalizeUrl(url);
+  return settings.state.bookmarks.find((b) => normalizeUrl(b.url) === n) || null;
+}
+
+// Adresse, Titel und Symbol der Seite im aktiven Tab
+function currentPage() {
+  const view = activeView();
+  if (!view || view.webContents.isDestroyed()) return { url: '', title: '', favicon: '' };
+  const wc = view.webContents;
+  const url = wc.getURL();
+  if (activeTab === 'yt') {
+    const title = wc.getTitle().replace(/\s*-\s*YouTube\s*$/, '').trim();
+    return { url, title: title && title !== 'YouTube' ? title : 'YouTube', favicon: 'yt' };
+  }
+  const tab = tabs.find((t) => t.id === activeTab);
+  return { url, title: wc.getTitle() || hostLabel(url), favicon: (tab && tab.favicon) || '' };
+}
+
+function faviconFor(url) {
+  if (isYouTubeUrl(url)) return 'yt';
+  try { return new URL(url).origin + '/favicon.ico'; } catch (_) { return ''; }
+}
+
+function bookmarksChanged() {
+  saveSettingsSoon();
+  layout();   // Leiste kann erscheinen/verschwinden
+  sendState();
+}
+
+function addBookmark(url, title, favicon) {
+  if (!isWebUrl(url) || findBookmark(url)) return;
+  if (settings.state.bookmarks.length >= MAX_BOOKMARKS) {
+    sendState({ notice: `Höchstens ${MAX_BOOKMARKS} Lesezeichen – bitte erst eins löschen.` });
+    return;
+  }
+  settings.state.bookmarks.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    title: String(title || hostLabel(url)).slice(0, 200),
+    url,
+    favicon: favicon || faviconFor(url)
+  });
+  bookmarksChanged();
+}
+
+function removeBookmark(id) {
+  const before = settings.state.bookmarks.length;
+  settings.state.bookmarks = settings.state.bookmarks.filter((b) => b.id !== id);
+  if (settings.state.bookmarks.length !== before) bookmarksChanged();
+}
+
+// ☆ / Strg+D: aktuelle Seite speichern oder wieder entfernen
+function toggleBookmark() {
+  const page = currentPage();
+  if (!isWebUrl(page.url)) return;
+  const existing = findBookmark(page.url);
+  if (existing) {
+    removeBookmark(existing.id);
+    sendState({ notice: `Lesezeichen entfernt: ${existing.title}` });
+  } else {
+    addBookmark(page.url, page.title, page.favicon);
+    sendState({ notice: `Lesezeichen gespeichert: ${page.title}` });
+  }
+}
+
+function renameBookmark(id, title) {
+  const b = settings.state.bookmarks.find((x) => x.id === id);
+  const t = String(title || '').trim().slice(0, 200);
+  if (!b || !t || t === b.title) { sendState(); return; }
+  b.title = t;
+  bookmarksChanged();
+}
+
+function moveBookmark(id, toIndex) {
+  const list = settings.state.bookmarks;
+  const from = list.findIndex((b) => b.id === id);
+  if (from < 0) return;
+  const [b] = list.splice(from, 1);
+  list.splice(clamp(Number(toIndex) || 0, 0, list.length), 0, b);
+  bookmarksChanged();
+}
+
+// Klick: YouTube-Links im YouTube-Tab, Websites im aktiven Browser-Tab (sonst neuer Tab)
+function openBookmark(id, newTab) {
+  const b = settings.state.bookmarks.find((x) => x.id === id);
+  if (!b) return;
+  if (isYouTubeUrl(b.url) && !newTab) navigate(b.url);
+  else if (newTab || activeTab === 'yt') createTab(b.url, true);
+  else activeView().webContents.loadURL(b.url).catch(() => {});
+}
+
+function bookmarkMenu(id) {
+  const b = settings.state.bookmarks.find((x) => x.id === id);
+  if (!b || !win) return;
+  Menu.buildFromTemplate([
+    { label: 'Öffnen', click: () => openBookmark(id, false) },
+    { label: 'In neuem Tab öffnen', click: () => openBookmark(id, true) },
+    { type: 'separator' },
+    { label: 'Umbenennen …', click: () => win.webContents.send('bookmark:edit', id) },
+    { label: 'Adresse kopieren', click: () => clipboard.writeText(b.url) },
+    { type: 'separator' },
+    { label: 'Löschen', click: () => removeBookmark(id) }
+  ]).popup({ window: win });
+}
+
+// ---------------------------------------------------------------------------
 // Gemeinsame Helfer für alle Seiten (YouTube-Tab, Browser-Tabs)
 // ---------------------------------------------------------------------------
 
@@ -992,6 +1149,7 @@ function attachShortcuts(wc) {
     else if (ctrl && key === 'w') { if (activeTab !== 'yt') closeTab(activeTab); }
     else if (ctrl && key === 'tab') cycleTab(input.shift ? -1 : 1);
     else if (ctrl && key === 'l') focusAddressBar();
+    else if (ctrl && key === 'd') toggleBookmark();
     else if ((ctrl && key === 'r') || (!input.control && !input.alt && key === 'f5')) activeView().webContents.reload();
     else if (input.alt && !input.control && key === 'arrowleft') { const h = activeView().webContents.navigationHistory; if (h.canGoBack()) h.goBack(); }
     else if (input.alt && !input.control && key === 'arrowright') { const h = activeView().webContents.navigationHistory; if (h.canGoForward()) h.goForward(); }
@@ -1007,6 +1165,9 @@ function attachContextMenu(wc) {
     if (p.linkURL && isWebUrl(p.linkURL)) {
       items.push({ label: 'Link in neuem Tab öffnen', click: () => createTab(p.linkURL, true) });
       items.push({ label: 'Link-Adresse kopieren', click: () => clipboard.writeText(p.linkURL) });
+      if (!findBookmark(p.linkURL)) {
+        items.push({ label: 'Link als Lesezeichen speichern', click: () => addBookmark(p.linkURL, (p.linkText || '').trim() || hostLabel(p.linkURL)) });
+      }
       items.push({ type: 'separator' });
     }
     if (p.isEditable) {
@@ -1029,6 +1190,12 @@ function attachContextMenu(wc) {
     items.push({ label: 'Zurück', enabled: h.canGoBack(), click: () => h.goBack() });
     items.push({ label: 'Vorwärts', enabled: h.canGoForward(), click: () => h.goForward() });
     items.push({ label: 'Neu laden', click: () => wc.reload() });
+    if (isWebUrl(wc.getURL())) {
+      const saved = findBookmark(wc.getURL());
+      items.push(saved
+        ? { label: 'Lesezeichen entfernen', click: () => removeBookmark(saved.id) }
+        : { label: 'Seite als Lesezeichen speichern', click: () => toggleBookmark() });
+    }
     const url = wc.getURL();
     if (isWebUrl(url)) {
       items.push({ type: 'separator' });
@@ -1380,7 +1547,7 @@ ipcMain.handle('hotkeys:get', (event) => {
     hotkeys: settings.hotkeys,
     defaults: DEFAULT_HOTKEYS,
     labels: HOTKEY_LABELS,
-    options: { adblock: settings.state.adblock !== false, theme: settings.state.theme },
+    options: { adblock: settings.state.adblock !== false, theme: settings.state.theme, showBookmarks: settings.state.showBookmarks !== false },
     themes: THEMES
   };
 });
@@ -1394,6 +1561,10 @@ ipcMain.handle('hotkeys:save', (event, map, options) => {
   if (!isFromSettings(event)) return { ok: false, failed: [] };
   if (options && typeof options.adblock === 'boolean' && options.adblock !== (settings.state.adblock !== false)) {
     setAdblock(options.adblock);
+  }
+  if (options && typeof options.showBookmarks === 'boolean' && options.showBookmarks !== (settings.state.showBookmarks !== false)) {
+    settings.state.showBookmarks = options.showBookmarks;
+    bookmarksChanged();
   }
   if (options && THEME_IDS.has(options.theme)) {
     settings.state.theme = options.theme;
@@ -1438,6 +1609,11 @@ ipcMain.on('back', (e) => {
 });
 ipcMain.on('reload', (e) => { if (fromBar(e)) activeView().webContents.reload(); });
 ipcMain.on('update:action', (e) => { if (fromBar(e)) updateAction(); });
+ipcMain.on('bookmark:toggle', (e) => { if (fromBar(e)) toggleBookmark(); });
+ipcMain.on('bookmark:open', (e, id, newTab) => { if (fromBar(e)) openBookmark(String(id), !!newTab); });
+ipcMain.on('bookmark:menu', (e, id) => { if (fromBar(e)) bookmarkMenu(String(id)); });
+ipcMain.on('bookmark:rename', (e, id, title) => { if (fromBar(e)) renameBookmark(String(id), title); });
+ipcMain.on('bookmark:move', (e, id, toIndex) => { if (fromBar(e)) moveBookmark(String(id), toIndex); });
 ipcMain.on('tab:new', (e) => { if (fromBar(e)) { createTab(START_PAGE, true); focusAddressBar(); } });
 ipcMain.on('tab:activate', (e, id) => { if (fromBar(e)) activateTab(id === 'yt' ? 'yt' : Number(id)); });
 ipcMain.on('tab:close', (e, id) => { if (fromBar(e)) closeTab(Number(id)); });

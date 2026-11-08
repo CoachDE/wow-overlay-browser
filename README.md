@@ -57,6 +57,14 @@ Beim ersten Start fragt YouTube nach der Cookie-Zustimmung. Das musst du nur ein
 - **Downloads** landen direkt im Windows-Ordner *Downloads*, die Leiste zeigt kurz an, wenn sie fertig sind.
 - Sicherheit: Websites bekommen **keinen** Zugriff auf Kamera, Mikrofon, Standort oder Benachrichtigungen.
 
+**Lesezeichen** (Leiste unter den Tabs):
+
+- **☆** rechts neben dem Adressfeld (oder `Strg+D`) speichert die aktuelle Seite – YouTube-Video oder Website. Nochmal klicken (★) entfernt sie.
+- **Klick** öffnet: YouTube-Links im YouTube-Tab, Websites im aktuellen Browser-Tab. **Mittelklick** oder `Strg`+Klick: neuer Tab.
+- **Rechtsklick**: in neuem Tab öffnen, umbenennen, Adresse kopieren, löschen. **Ziehen** sortiert um, das **Mausrad** scrollt bei vielen Lesezeichen.
+- Auch per Rechtsklick auf Links und Seiten: *Als Lesezeichen speichern*.
+- Die Leiste erscheint, sobald es ein Lesezeichen gibt; ausblenden in ✱ → Allgemein.
+
 **Designs** (✱ → Design): **Gold**, **Frost**, **Smaragd**, **Arkan**, **Blut** und **Schlicht**. Ein Klick zeigt das Design sofort als Vorschau, „Speichern“ übernimmt es, „Abbrechen“ verwirft es.
 
 **Tray-Symbol** (unten rechts in der Taskleiste, goldene Raute – unter Windows 11 evtl. hinter dem **^**-Pfeil versteckt; man kann es von dort direkt in die Taskleiste ziehen): Rechtsklick öffnet ein Menü mit Overlay anzeigen/ausblenden, Durchklicken, Leiste, Mini-Leiste, Maximieren, Werbeblocker, Fenster zurücksetzen, Einstellungen und Beenden. Ein Linksklick holt das Overlay zurück und schaltet Durchklicken aus. **Das funktioniert immer, auch wenn ein Hotkey nicht geht.**

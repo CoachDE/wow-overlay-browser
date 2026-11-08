@@ -168,6 +168,134 @@ function renderTabs(state) {
 
 api.onFocusUrl(() => { urlInput.focus(); urlInput.select(); });
 
+// ---------- Lesezeichen ----------
+const bmList = $('bmList');
+const bmEls = new Map();   // id -> Element
+let bmData = [];
+let bmDragId = null;
+let bmEditingId = null;
+let bmPendingState = null;
+
+$('btnStar').addEventListener('click', () => api.toggleBookmark());
+
+// Mausrad scrollt die Leiste waagerecht
+bmList.addEventListener('wheel', (e) => {
+  if (bmList.scrollWidth <= bmList.clientWidth) return;
+  e.preventDefault();
+  bmList.scrollLeft += (e.deltaY || e.deltaX);
+}, { passive: false });
+
+function bmIcon(el, favicon) {
+  const ico = el.querySelector('.ico');
+  if (ico.dataset.src === favicon) return;
+  ico.dataset.src = favicon;
+  ico.textContent = '';
+  if (favicon === 'yt') { ico.innerHTML = YT_ICON; return; }
+  if (favicon && /^(https?:|data:image\/)/i.test(favicon)) {
+    const img = document.createElement('img');
+    img.src = favicon;
+    img.alt = '';
+    img.addEventListener('error', () => { ico.innerHTML = GLOBE_ICON; });
+    ico.append(img);
+  } else {
+    ico.innerHTML = GLOBE_ICON;
+  }
+}
+
+function makeBmEl(id) {
+  const el = document.createElement('div');
+  el.className = 'bm';
+  el.dataset.id = id;
+  el.draggable = true;
+  el.innerHTML = '<span class="ico"></span><span class="title"></span>';
+  el.addEventListener('click', (e) => { if (!bmEditingId) api.openBookmark(id, e.ctrlKey); });
+  el.addEventListener('mousedown', (e) => { if (e.button === 1) { e.preventDefault(); api.openBookmark(id, true); } });
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); api.bookmarkMenu(id); });
+  // Ziehen zum Umsortieren
+  el.addEventListener('dragstart', (e) => {
+    bmDragId = id;
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+  });
+  el.addEventListener('dragend', () => {
+    bmDragId = null;
+    document.querySelectorAll('.bm').forEach((b) => b.classList.remove('dragging', 'drop-before', 'drop-after'));
+    if (bmPendingState) { const s = bmPendingState; bmPendingState = null; renderBookmarks(s); }
+  });
+  el.addEventListener('dragover', (e) => {
+    if (!bmDragId || bmDragId === id) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const after = e.clientX > r.left + r.width / 2;
+    el.classList.toggle('drop-after', after);
+    el.classList.toggle('drop-before', !after);
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after'));
+  el.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!bmDragId || bmDragId === id) return;
+    const after = el.classList.contains('drop-after');
+    const ids = bmData.map((b) => b.id).filter((x) => x !== bmDragId);
+    const target = ids.indexOf(id) + (after ? 1 : 0);
+    api.moveBookmark(bmDragId, target);
+  });
+  return el;
+}
+
+function renderBookmarks(state) {
+  if (bmDragId || bmEditingId) { bmPendingState = state; return; }
+  const list = state.bookmarks || [];
+  bmData = list;
+  $('bookmarks').hidden = !state.showBookmarks;
+  const seen = new Set();
+  list.forEach((b, i) => {
+    seen.add(b.id);
+    let el = bmEls.get(b.id);
+    if (!el) { el = makeBmEl(b.id); bmEls.set(b.id, el); }
+    if (bmList.children[i] !== el) bmList.insertBefore(el, bmList.children[i] || null);
+    el.querySelector('.title').textContent = b.title;
+    el.title = `${b.title}\n${b.url}\nKlick: öffnen · Mittelklick: neuer Tab · Rechtsklick: mehr · Ziehen: sortieren`;
+    bmIcon(el, b.favicon || '');
+  });
+  for (const [id, el] of bmEls) {
+    if (!seen.has(id)) { el.remove(); bmEls.delete(id); }
+  }
+}
+
+// Umbenennen direkt in der Leiste (nach "Umbenennen …" im Rechtsklick-Menü)
+api.onEditBookmark((id) => {
+  const el = bmEls.get(id);
+  const b = bmData.find((x) => x.id === id);
+  if (!el || !b) return;
+  bmEditingId = id;
+  const title = el.querySelector('.title');
+  const input = document.createElement('input');
+  input.value = b.title;
+  title.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const span = document.createElement('span');
+    span.className = 'title';
+    span.textContent = b.title;
+    input.replaceWith(span);
+    bmEditingId = null;
+    if (save) api.renameBookmark(id, input.value);
+    if (bmPendingState) { const s = bmPendingState; bmPendingState = null; renderBookmarks(s); }
+  };
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('click', (e) => e.stopPropagation());
+});
+
 let shownHotkeyWarning = false;
 const hk = (state, name) => (state.hotkeys && state.hotkeys[name] ? formatAccelerator(state.hotkeys[name]) : 'kein Hotkey');
 
@@ -187,6 +315,9 @@ api.onState((state) => {
   $('btnHome').title = state.activeTab === 'yt' ? 'YouTube-Startseite' : 'Startseite (Google)';
   if (state.tabs) renderTabs(state);
   renderUpdate(state.update);
+  if (state.bookmarks) renderBookmarks(state);
+  $('btnStar').classList.toggle('saved', !!state.bookmarked);
+  $('btnStar').title = state.bookmarked ? 'Lesezeichen entfernen (Strg+D)' : 'Als Lesezeichen speichern (Strg+D)';
   if (state.notice) showStatus(state.notice, 5000);
   $('btnBack').disabled = !state.canGoBack;
   opacity.value = Math.round(state.opacity * 100);
