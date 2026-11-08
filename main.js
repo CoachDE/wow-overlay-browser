@@ -1207,13 +1207,10 @@ function toggleBookmark() {
   const page = currentPage();
   if (!isWebUrl(page.url)) return;
   const existing = findBookmark(page.url);
-  if (existing) {
-    removeBookmark(existing.id);
-    sendState({ notice: `Lesezeichen entfernt: ${existing.title}` });
-  } else {
-    addBookmark(page.url, page.title, page.favicon);
-    sendState({ notice: `Lesezeichen gespeichert: ${page.title}` });
-  }
+  // Keine Text-Meldung: Sie würde die Leiste mit dem Stern verdecken. Die Leiste zeigt
+  // das Speichern/Entfernen selbst (Stern ploppt, fliegt in die Leiste, Lesezeichen leuchtet/verblasst).
+  if (existing) removeBookmark(existing.id);
+  else addBookmark(page.url, page.title, page.favicon);
 }
 
 function renameBookmark(id, title) {

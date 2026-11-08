@@ -247,24 +247,86 @@ function makeBmEl(id) {
   return el;
 }
 
+let bmInitialized = false;   // erste Anzeige nicht animieren
+const STAR_PATH = 'M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6Z';
+
 function renderBookmarks(state) {
   if (bmDragId || bmEditingId) { bmPendingState = state; return; }
   const list = state.bookmarks || [];
   bmData = list;
-  $('bookmarks').hidden = !state.showBookmarks;
+  const row = $('bookmarks');
+  const wasHidden = row.hidden;
+  row.hidden = !state.showBookmarks;
+  // Leiste erscheint (z. B. erstes Lesezeichen): sanft hereingleiten
+  if (bmInitialized && wasHidden && !row.hidden) {
+    row.classList.remove('appear');
+    void row.offsetWidth;
+    row.classList.add('appear');
+  }
   const seen = new Set();
+  const added = [];
   list.forEach((b, i) => {
     seen.add(b.id);
     let el = bmEls.get(b.id);
-    if (!el) { el = makeBmEl(b.id); bmEls.set(b.id, el); }
+    if (!el) { el = makeBmEl(b.id); bmEls.set(b.id, el); if (bmInitialized) added.push(el); }
+    el.classList.remove('bm-removing');
     if (bmList.children[i] !== el) bmList.insertBefore(el, bmList.children[i] || null);
     el.querySelector('.title').textContent = b.title;
     el.title = `${b.title}\n${b.url}\nKlick: öffnen · Mittelklick: neuer Tab · Rechtsklick: mehr · Ziehen: sortieren`;
     bmIcon(el, b.favicon || '');
   });
+  // Entfernte Lesezeichen kurz ausblenden, dann löschen
   for (const [id, el] of bmEls) {
-    if (!seen.has(id)) { el.remove(); bmEls.delete(id); }
+    if (seen.has(id)) continue;
+    bmEls.delete(id);
+    if (bmInitialized && !row.hidden) {
+      el.classList.add('bm-removing');
+      setTimeout(() => el.remove(), 300);
+    } else {
+      el.remove();
+    }
   }
+  bmInitialized = true;
+  for (const el of added) celebrateBookmark(el);
+}
+
+// Neues Lesezeichen: Stern ploppt, ein Stern fliegt in die Leiste, das Lesezeichen leuchtet auf
+function celebrateBookmark(el) {
+  const star = $('btnStar');
+  star.classList.remove('pop');
+  void star.offsetWidth;
+  star.classList.add('pop');
+  setTimeout(() => star.classList.remove('pop'), 600);
+
+  // Erst warten, bis die Leiste sichtbar ist und ihr Platz feststeht
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const from = star.getBoundingClientRect();
+    const to = el.getBoundingClientRect();
+    const pulse = () => {
+      el.classList.remove('bm-new');
+      void el.offsetWidth;
+      el.classList.add('bm-new');
+      setTimeout(() => el.classList.remove('bm-new'), 2300);
+    };
+    if (!from.width || !to.width || star.offsetParent === null) { pulse(); return; }
+    const fly = document.createElement('div');
+    fly.className = 'fly-star';
+    fly.innerHTML = `<svg viewBox="0 0 16 16"><path d="${STAR_PATH}"/></svg>`;
+    fly.style.left = `${from.left + from.width / 2 - 8}px`;
+    fly.style.top = `${from.top + from.height / 2 - 8}px`;
+    document.body.appendChild(fly);
+    const dx = (to.left + 12) - (from.left + from.width / 2);
+    const dy = (to.top + to.height / 2) - (from.top + from.height / 2);
+    requestAnimationFrame(() => {
+      fly.style.transform = `translate(${dx}px, ${dy}px) scale(.7) rotate(180deg)`;
+      fly.style.opacity = '0.2';
+    });
+    let done = false;
+    const finish = () => { if (done) return; done = true; fly.remove(); pulse(); };
+    fly.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 800); // falls transitionend nicht kommt
+  }));
 }
 
 // Umbenennen direkt in der Leiste (nach "Umbenennen …" im Rechtsklick-Menü)

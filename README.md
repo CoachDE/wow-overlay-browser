@@ -61,7 +61,7 @@ Beim ersten Start fragt YouTube nach der Cookie-Zustimmung. Das musst du nur ein
 
 **Lesezeichen** (Leiste unter den Tabs):
 
-- **☆** rechts neben dem Adressfeld (oder `Strg+D`) speichert die aktuelle Seite – YouTube-Video oder Website. Nochmal klicken (★) entfernt sie.
+- **☆** rechts neben dem Adressfeld (oder `Strg+D`) speichert die aktuelle Seite – YouTube-Video oder Website. Der Stern ploppt auf, fliegt in die Leiste, und das neue Lesezeichen leuchtet golden auf. Nochmal klicken (★) entfernt es wieder (es verblasst).
 - **Klick** öffnet: YouTube-Links im YouTube-Tab, Websites im aktuellen Browser-Tab. **Mittelklick** oder `Strg`+Klick: neuer Tab.
 - **Rechtsklick**: in neuem Tab öffnen, umbenennen, Adresse kopieren, löschen. **Ziehen** sortiert um, das **Mausrad** scrollt bei vielen Lesezeichen.
 - Auch per Rechtsklick auf Links und Seiten: *Als Lesezeichen speichern*.
