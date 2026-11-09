@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, WebContentsView, globalShortcut, ipcMain, shell, screen, Tray, Menu, nativeImage, clipboard } = require('electron');
+const { app, BrowserWindow, WebContentsView, globalShortcut, ipcMain, shell, screen, Tray, Menu, nativeImage, clipboard, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { formatAccelerator } = require('./keys.js');
@@ -2208,12 +2208,40 @@ app.whenReady().then(() => {
   registerHotkeys();
   createTray();
   setupUpdater();
+  setInterval(flushBrowserData, FLUSH_INTERVAL);
   if (!settings.state.tourDone) {
     setTimeout(() => { if (win && !win.isDestroyed()) startTour(); }, 2500);
   }
 });
 
-app.on('before-quit', () => {
+// ---------------------------------------------------------------------------
+// Anmeldedaten (Cookies, Local Storage) sicher auf die Festplatte schreiben.
+// YouTube/Google und Twitch erneuern ihre Anmelde-Cookies laufend; landet der neue
+// Stand nicht auf der Festplatte, ist man nach dem nächsten Start abgemeldet.
+// ---------------------------------------------------------------------------
+const BROWSER_PARTITION = 'persist:youtube';
+const FLUSH_INTERVAL = 60 * 1000;
+
+async function flushBrowserData() {
+  try {
+    const ses = session.fromPartition(BROWSER_PARTITION);
+    ses.flushStorageData();
+    await Promise.race([ses.cookies.flushStore(), new Promise((r) => setTimeout(r, 2000))]);
+  } catch (err) {
+    logError('flushBrowserData', err);
+  }
+}
+
+// Erstes "Beenden": anhalten, Anmeldedaten speichern, dann wirklich beenden
+let quitFlushed = false;
+app.on('before-quit', (event) => {
+  if (!quitFlushed) {
+    event.preventDefault();
+    quitFlushed = true;
+    if (win && !win.isDestroyed()) rememberBounds();
+    flushBrowserData().finally(() => app.quit());
+    return;
+  }
   if (updatePopup && !updatePopup.isDestroyed()) updatePopup.destroy();
   if (updater && updater.state.status === 'ready') {
     updater.restart(() => {}, { launch: false });
