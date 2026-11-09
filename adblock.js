@@ -131,7 +131,8 @@ function fixScriptletInjection(blocker) {
       sender: {
         insertCSS: (css, opts) => {
           // CSS nur für das Hauptdokument (iframes von YouTube brauchen keins)
-          if (frame && frame === event.sender.mainFrame) return event.sender.insertCSS(css, opts);
+          // Seite kann gerade geschlossen werden -> Fehler dann einfach ignorieren
+          if (frame && frame === event.sender.mainFrame) return event.sender.insertCSS(css, opts).catch(() => '');
           return Promise.resolve('');
         },
         executeJavaScript: (code, gesture) => {

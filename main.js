@@ -145,6 +145,21 @@ app.userAgentFallback = app.userAgentFallback
 const APP_USER_MODEL_ID = 'CoachDE.WowOverlayBrowser';
 if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
 
+// Unerwartete Fehler nicht als Fenster zeigen, sondern in %APPDATA%\YouTube Overlay\error.log schreiben
+function logError(kind, err) {
+  try {
+    const line = `[${new Date().toISOString()}] ${kind}: ${err && err.stack ? err.stack : String(err)}\n`;
+    const dir = app.getPath('userData');
+    fs.mkdirSync(dir, { recursive: true });
+    const logFile = path.join(dir, 'error.log');
+    try { if (fs.statSync(logFile).size > 512 * 1024) fs.unlinkSync(logFile); } catch (_) { /* noch keine Datei */ }
+    fs.appendFileSync(logFile, line);
+  } catch (_) { /* Protokoll ist optional */ }
+  console.error(kind, err);
+}
+process.on('uncaughtException', (err) => logError('uncaughtException', err));
+process.on('unhandledRejection', (err) => logError('unhandledRejection', err));
+
 // Nur eine Instanz erlauben
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -499,11 +514,15 @@ function createWindow() {
   win.on('hide', updateTray);
 
   win.on('closed', () => {
-    app.quit();   // auch wenn noch ein Pop-up offen ist
+    // Erst alles als "weg" markieren – beim Beenden greift sonst noch Code auf das
+    // schon zerstörte Fenster zu ("Object has been destroyed").
     clearInterval(peekTimer);
     clearInterval(volumeTimer);
+    clearInterval(fadeTimer);
+    if (splitDrag) { clearInterval(splitDrag); splitDrag = null; }
     win = null;
     ytView = null;
+    app.quit();   // auch wenn noch ein Pop-up offen ist
   });
 }
 
@@ -680,7 +699,7 @@ function applyShortsMode(on) {
 }
 
 function rememberBounds() {
-  if (!win || win.isMinimized() || maximized || miniMode) return;
+  if (!win || win.isDestroyed() || win.isMinimized() || maximized || miniMode) return;
   if (shortsMode) settings.state.shortsBounds = win.getBounds();
   else settings.state.bounds = win.getBounds();
   saveSettingsSoon();
@@ -688,7 +707,7 @@ function rememberBounds() {
 
 function sendState(extra = {}) {
   updateTray();
-  if (!win || win.webContents.isDestroyed()) return;
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   const view = activeView();
   const wc = view && !view.webContents.isDestroyed() ? view.webContents : null;
   const active = activeTab === 'yt' ? null : tabs.find((t) => t.id === activeTab);
@@ -2199,7 +2218,7 @@ app.on('before-quit', () => {
   if (updater && updater.state.status === 'ready') {
     updater.restart(() => {}, { launch: false });
   }
-  if (win) rememberBounds();
+  if (win && !win.isDestroyed()) rememberBounds();
   saveSettingsNow();
 });
 
