@@ -206,27 +206,76 @@ class Updater {
 
 // Läuft in der NEUEN Version, wenn sie mit "--finish-update <alte.exe> <pid>" gestartet wurde.
 // Zeigt kein Fenster. Ergebnis: alte .exe enthält die neue Version und ist gestartet.
+// Kleines Protokoll in %APPDATA%\YouTube Overlay\error.log (für Fehlersuche)
+function logUpdate(app, text) {
+  try {
+    const dir = app.getPath('userData');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'error.log'), `[${new Date().toISOString()}] update: ${text}\n`);
+  } catch (_) { /* optional */ }
+}
+
+// Ersetzt "target" durch "source". Ist das Ziel gesperrt (z. B. OneDrive lädt die Datei
+// gerade hoch, oder der Virenscanner prüft sie), wird es weggerückt (".old") und dann
+// kopiert. Versucht es bis zu "seconds" Sekunden lang.
+async function replaceFile(source, target, seconds) {
+  let lastErr = null;
+  for (let i = 0; i < seconds * 2; i++) {
+    try {
+      fs.copyFileSync(source, target);
+      return { ok: true };
+    } catch (err) {
+      lastErr = err;
+      try {
+        if (fs.existsSync(target)) {
+          const old = target + '.old';
+          try { fs.unlinkSync(old); } catch (_) { /* gibt es nicht */ }
+          fs.renameSync(target, old);
+          fs.copyFileSync(source, target);
+          return { ok: true, movedOld: true };
+        }
+      } catch (err2) { lastErr = err2; }
+    }
+    await wait(500);
+  }
+  return { ok: false, error: lastErr };
+}
+
 function finishUpdate(app, oldExe, waitPid, launch = true) {
   const self = process.env.PORTABLE_EXECUTABLE_FILE;
   app.whenReady().then(async () => {
     try {
       for (let i = 0; i < 120 && isAlive(waitPid); i++) await wait(500); // max. 60 s
       if (!self || !oldExe || path.resolve(self) === path.resolve(oldExe)) throw new Error('nichts zu tun');
-      let copied = false;
-      for (let i = 0; i < 40 && !copied; i++) {
-        try {
-          fs.copyFileSync(self, oldExe);
-          copied = true;
-        } catch (_) {
-          await wait(500); // alte Datei evtl. noch kurz gesperrt
-        }
-      }
-      if (launch) startDetached(copied ? oldExe : self);
-    } catch (_) {
+      const r = await replaceFile(self, oldExe, 60);
+      if (!r.ok) logUpdate(app, `Ersetzen von ${oldExe} fehlgeschlagen: ${r.error && r.error.code} ${r.error && r.error.message}`);
+      if (launch) startDetached(r.ok ? oldExe : self);
+    } catch (err) {
+      logUpdate(app, `finishUpdate: ${err && err.message}`);
       if (self && launch) startDetached(self);
     }
     app.exit(0);
   });
+}
+
+// Selbstheilung: Läuft die App als "YouTube-Overlay-1.2.3.exe" (das Ersetzen beim Update
+// hat nicht geklappt), kopiert sie sich auf "YouTube-Overlay.exe" daneben. Verknüpfungen und
+// das angeheftete Taskleisten-Symbol zeigen dann wieder auf die neue Version.
+// Liefert den Pfad, unter dem die App künftig gestartet werden soll.
+async function healInstall(app) {
+  const self = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (!self || !DOWNLOAD_NAME.test(path.basename(self))) return self || null;
+  const target = path.join(path.dirname(self), 'YouTube-Overlay.exe');
+  try {
+    // Nicht über eine neuere Datei kopieren (z. B. später von Hand heruntergeladen)
+    if (fs.existsSync(target) && fs.statSync(target).mtimeMs > fs.statSync(self).mtimeMs) return target;
+  } catch (_) { /* weiter */ }
+  const r = await replaceFile(self, target, 30);
+  if (!r.ok) {
+    logUpdate(app, `Selbstheilung nach ${target} fehlgeschlagen: ${r.error && r.error.code}`);
+    return self;
+  }
+  return target;
 }
 
 // Fertig benutzte Update-Dateien (YouTube-Overlay-1.2.3.exe) neben der App und im
@@ -243,7 +292,8 @@ function cleanupDownloads(extraDirs, isBusy) {
       try {
         for (const f of fs.readdirSync(dir)) {
           const full = path.join(dir, f);
-          if (DOWNLOAD_NAME.test(f) && path.resolve(full) !== path.resolve(self)) {
+          const isOld = /^YouTube-Overlay\.exe\.old$/i.test(f);
+          if ((DOWNLOAD_NAME.test(f) || isOld) && path.resolve(full) !== path.resolve(self)) {
             try { fs.unlinkSync(full); } catch (_) { /* noch gesperrt – nächster Versuch */ }
           }
         }
@@ -254,4 +304,4 @@ function cleanupDownloads(extraDirs, isBusy) {
   setTimeout(run, 60000);
 }
 
-module.exports = { Updater, isNewer, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG };
+module.exports = { Updater, isNewer, finishUpdate, cleanupDownloads, healInstall, replaceFile, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG };

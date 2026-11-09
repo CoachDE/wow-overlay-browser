@@ -1,7 +1,7 @@
 {
   "name": "youtube-overlay",
   "productName": "YouTube Overlay",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "description": "YouTube-Overlay mit Browser-Tabs, Werbeblocker und Hotkeys, das über World of Warcraft liegt.",
   "main": "main.js",
   "private": true,

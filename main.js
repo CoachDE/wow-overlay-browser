@@ -9,7 +9,7 @@ const { tr, errorText, LANGUAGES } = require('./i18n.js');
 const L = (key, vars) => tr(settings && settings.state ? settings.state.language : 'de', key, vars);
 const LANG_IDS = new Set(LANGUAGES.map((l) => l.id));
 const { YouTubeAdblock } = require('./adblock.js');
-const { Updater, finishUpdate, cleanupDownloads, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG } = require('./update.js');
+const { Updater, finishUpdate, cleanupDownloads, healInstall, CURRENT_VERSION, RELEASES_PAGE, FINISH_FLAG, NO_LAUNCH_FLAG } = require('./update.js');
 
 // Update abschließen: Diese (neue) Version wurde von der alten mit "--finish-update" gestartet.
 // Sie ersetzt die alte .exe, startet sie neu und beendet sich – sonst passiert hier nichts.
@@ -530,8 +530,8 @@ function createWindow() {
 // Ohne diese Angaben würde Windows beim Anheften den Temp-Pfad speichern (der nach dem Beenden
 // verschwindet). So startet das angeheftete Symbol immer die eigentliche .exe (z. B. auf dem Desktop),
 // und das laufende Fenster wird demselben Symbol zugeordnet.
-function setupTaskbarPin() {
-  const exe = process.env.PORTABLE_EXECUTABLE_FILE;
+function setupTaskbarPin(exePath) {
+  const exe = exePath || process.env.PORTABLE_EXECUTABLE_FILE;
   if (!exe || process.platform !== 'win32' || !win) return;
   try {
     win.setAppDetails({
@@ -1742,6 +1742,10 @@ function resetWindowPosition() {
 // Updates (neue Versionen von GitHub)
 // ---------------------------------------------------------------------------
 function setupUpdater() {
+  // Falls das letzte Update nur als "YouTube-Overlay-x.y.z.exe" gelandet ist: reparieren
+  healInstall(app).then((exe) => {
+    if (exe && exe !== process.env.PORTABLE_EXECUTABLE_FILE) setupTaskbarPin(exe);
+  }).catch(() => {});
   updater = new Updater({ onChange: onUpdateState });
   cleanupDownloads([app.getPath('downloads')], () => ['downloading', 'ready'].includes(updater.state.status));
   setTimeout(() => checkForUpdatesQuietly(UPDATE_CHECK_ON_USE), UPDATE_CHECK_DELAY);
